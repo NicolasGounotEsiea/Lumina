@@ -6,7 +6,7 @@ from PySide6.QtWidgets import (
     QFrame, QHBoxLayout, QLabel, QPushButton, QSlider, QVBoxLayout,
 )
 
-from lumina_control.config import ACCENT_COLOR, CARD_HOVER, BORDER_COLOR
+from lumina_control.config import ACCENT_COLOR, CARD_HOVER
 from lumina_control.utils import wake_all_monitors
 from lumina_control.monitor_enumerate import MonitorDescriptor
 from lumina_control.ui.calibration import CalibrationDialog

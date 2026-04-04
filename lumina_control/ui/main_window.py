@@ -19,12 +19,10 @@ from lumina_control.profiles import ProfileManager
 from lumina_control.utils import (
     get_active_screen_index, set_gamma_all, wake_all_monitors,
 )
-from lumina_control.monitor_enumerate import enumerate_monitors, MonitorDescriptor
+from lumina_control.monitor_enumerate import enumerate_monitors
 from lumina_control.ui.monitor_card import MonitorCard
 from lumina_control.ui.patterns import PatternWindow
 from lumina_control.ui.calibration import CalibrationWizard
-
-import json
 
 log = logging.getLogger(__name__)
 
