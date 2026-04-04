@@ -1,0 +1,42 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg-info/
+dist/
+build/
+*.spec.bak
+
+# Virtual environment
+.venv/
+venv/
+env/
+
+# PyInstaller output
+dist-installer/
+
+# App data / user files
+profiles.json
+*.json.bak
+
+# Secrets / local config
+*.env
+.env.*
+
+# Claude Code session data
+.claude/
+
+# Windows
+Thumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# IDE
+.vscode/
+.idea/
+*.suo
+*.user
+
+# Logs
+*.log
