@@ -14,9 +14,13 @@ from lumina_control.ui.calibration import CalibrationDialog
 log = logging.getLogger(__name__)
 
 # DDC-CI VCP codes
-VCP_BRIGHTNESS = 0x10
-VCP_CONTRAST   = 0x12
-VCP_POWER      = 0xD6
+VCP_BRIGHTNESS   = 0x10
+VCP_CONTRAST     = 0x12
+VCP_COLOR_PRESET = 0x14
+VCP_RED          = 0x16
+VCP_GREEN        = 0x18
+VCP_BLUE         = 0x1A
+VCP_POWER        = 0xD6
 
 
 class MonitorCard(QFrame):
@@ -140,6 +144,23 @@ class MonitorCard(QFrame):
         self._pending_con = v
         self._timer.start()
 
+    def apply_rule_values(self, brightness: int | None, contrast: int | None) -> None:
+        """Force-apply brightness/contrast from an app rule, even if slider is unchanged."""
+        if brightness is not None:
+            self.lbl_bri.setText(str(brightness))
+            self._pending_bri = brightness
+            self.sl_bri.blockSignals(True)
+            self.sl_bri.setValue(brightness)
+            self.sl_bri.blockSignals(False)
+        if contrast is not None:
+            self.lbl_con.setText(str(contrast))
+            self._pending_con = contrast
+            self.sl_con.blockSignals(True)
+            self.sl_con.setValue(contrast)
+            self.sl_con.blockSignals(False)
+        if brightness is not None or contrast is not None:
+            self._timer.start()
+
     def _apply_changes(self) -> None:
         applied_bri = self._pending_bri
         applied_con = self._pending_con
@@ -155,6 +176,36 @@ class MonitorCard(QFrame):
             log.debug("DDC-CI write failed on monitor %d: %s", self.index, e)
         if self.sync_hook and (applied_bri is not None or applied_con is not None):
             self.sync_hook(self.device_name, applied_bri, applied_con)
+
+    # ── RGB gains (DDC-CI) ───────────────────────────────────────────────────
+
+    def read_rgb(self) -> tuple[int, int, int] | None:
+        """Read current R/G/B gains via DDC-CI. Returns None on failure."""
+        if not self.monitor:
+            return None
+        try:
+            with self.monitor:
+                self.monitor.vcp.set_vcp_feature(VCP_COLOR_PRESET, 0x0B)
+                r = self.monitor.vcp.get_vcp_feature(VCP_RED)[0]
+                g = self.monitor.vcp.get_vcp_feature(VCP_GREEN)[0]
+                b = self.monitor.vcp.get_vcp_feature(VCP_BLUE)[0]
+            return (r, g, b)
+        except Exception as e:
+            log.debug("Cannot read RGB for monitor %d: %s", self.index, e)
+            return None
+
+    def apply_rule_rgb(self, red: int | None, green: int | None, blue: int | None) -> None:
+        """Apply R/G/B gain values via DDC-CI. None values are skipped."""
+        if not self.monitor or (red is None and green is None and blue is None):
+            return
+        try:
+            with self.monitor:
+                self.monitor.vcp.set_vcp_feature(VCP_COLOR_PRESET, 0x0B)
+                if red   is not None: self.monitor.vcp.set_vcp_feature(VCP_RED,   red)
+                if green is not None: self.monitor.vcp.set_vcp_feature(VCP_GREEN, green)
+                if blue  is not None: self.monitor.vcp.set_vcp_feature(VCP_BLUE,  blue)
+        except Exception as e:
+            log.debug("Cannot set RGB for monitor %d: %s", self.index, e)
 
     # ── Power ─────────────────────────────────────────────────────────────────
 

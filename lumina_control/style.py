@@ -315,6 +315,10 @@ QPushButton[class="icon-btn"]:hover {{
     color: {TEXT_COLOR};
     background-color: rgba(255,255,255,0.07);
 }}
+QPushButton[class="icon-btn"][danger="true"]:hover {{
+    color: {DANGER_COLOR};
+    background-color: rgba(255,111,111,0.10);
+}}
 QPushButton#PowerBtn[active="false"]         {{ color: {DANGER_COLOR}; }}
 QPushButton#PowerBtn[active="true"]:hover    {{ color: {SUCCESS_COLOR}; }}
 

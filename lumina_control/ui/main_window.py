@@ -13,11 +13,13 @@ from PySide6.QtWidgets import (
 from lumina_control.config import (
     ACCENT_COLOR, APP_NAME, APP_WIDTH,
     BORDER_COLOR, WARM_COLOR,
-    get_profile_path, get_settings_path,
+    get_profile_path, get_rules_path, get_settings_path,
 )
 from lumina_control.profiles import ProfileManager
+from lumina_control.app_rules import AppRule, AppRuleManager
 from lumina_control.utils import (
-    get_active_screen_index, set_gamma_all, wake_all_monitors,
+    get_active_screen_index, get_foreground_process,
+    get_foreground_window_monitor, set_device_gamma, set_gamma_all, wake_all_monitors,
 )
 from lumina_control.monitor_enumerate import enumerate_monitors
 from lumina_control.ui.monitor_card import MonitorCard
@@ -93,6 +95,19 @@ class MainWindow(QWidget):
         self.gamma_value           = s["gamma_value"]
         self.focus_enabled         = s["focus_enabled"]
         self.focus_dim             = s["focus_dim"]
+        self.app_rules_enabled     = s["app_rules_enabled"]
+
+        # App rules engine
+        self._rule_mgr        = AppRuleManager(get_rules_path())
+        self._rules:            list[AppRule]    = self._rule_mgr.load()
+        self._active_rule:      AppRule | None   = None
+        self._pre_rule_bri:     dict[str, int]               = {}
+        self._pre_rule_con:     dict[str, int]               = {}
+        self._pre_rule_gamma:   dict[str, float]             = {}
+        self._pre_rule_rgb:     dict[str, tuple[int,int,int]] = {}
+        self._active_rule_device: str | None                 = None
+        self._rule_candidate:   str | None       = None  # process being watched for stability
+        self._rule_ticks:       int              = 0     # consecutive polls with same process
 
         # Transient runtime state
         self.cards:               list[MonitorCard] = []
@@ -213,6 +228,7 @@ class MainWindow(QWidget):
         self._build_snapshot_section()
 
         self.main_l.addWidget(self._sep())
+        self._build_app_rules_section()
         self._build_tools_section()
         self.main_l.addStretch()
 
@@ -452,6 +468,36 @@ class MainWindow(QWidget):
 
         self.main_l.addWidget(sec)
 
+    def _build_app_rules_section(self) -> None:
+        sec = _CollapsibleSection("PROFILS AUTOMATIQUES", expanded=False)
+
+        # Toggle + status
+        h_top = QHBoxLayout()
+        self._chk_app_rules = QCheckBox("Activer les profils par application")
+        self._chk_app_rules.setChecked(self.app_rules_enabled)
+        self._chk_app_rules.toggled.connect(self._set_app_rules_enabled)
+        h_top.addWidget(self._chk_app_rules, stretch=1)
+        sec.add_layout(h_top)
+
+        # Active rule status indicator
+        self._lbl_rule_status = QLabel("Aucune règle active")
+        self._lbl_rule_status.setStyleSheet("font-size:11px; color:#606060;")
+        sec.add_widget(self._lbl_rule_status)
+
+        # Real-time process display (visible when enabled)
+        self._lbl_proc_detect = QLabel("")
+        self._lbl_proc_detect.setStyleSheet(f"font-size:10px; color:#505050;")
+        sec.add_widget(self._lbl_proc_detect)
+
+        # Manage button
+        btn_manage = QPushButton("Gérer les règles…")
+        btn_manage.setProperty("class", "pill-muted")
+        btn_manage.setCursor(Qt.PointingHandCursor)
+        btn_manage.clicked.connect(self._open_app_rules_dialog)
+        sec.add_widget(btn_manage)
+
+        self.main_l.addWidget(sec)
+
     def _build_tools_section(self) -> None:
         self.main_l.addWidget(self._section_label("OUTILS"))
         h = QHBoxLayout()
@@ -490,6 +536,7 @@ class MainWindow(QWidget):
         widgets = [
             self.chk_sync, self.chk_sync_rgb, self.chk_sync_relative,
             self.sl_sync_bri, self.sl_sync_con, self.sl_gamma,
+            self._chk_app_rules,
         ]
         for w in widgets:
             w.blockSignals(True)
@@ -500,6 +547,7 @@ class MainWindow(QWidget):
         self.sl_sync_bri.setValue(self.sync_offset_bri)
         self.sl_sync_con.setValue(self.sync_offset_con)
         self.sl_gamma.setValue(int(round(self.gamma_value * 100)))
+        self._chk_app_rules.setChecked(self.app_rules_enabled)
 
         for w in widgets:
             w.blockSignals(False)
@@ -529,7 +577,9 @@ class MainWindow(QWidget):
             "gamma_value":           self.gamma_value,
             "focus_enabled":         self.focus_enabled,
             "focus_dim":             self.focus_dim,
+            "app_rules_enabled":     self.app_rules_enabled,
         })
+        self._rule_mgr.save(self._rules)
         log.debug("Settings saved.")
 
     # ─────────────────────────────────────────────────────────────────────────
@@ -570,6 +620,179 @@ class MainWindow(QWidget):
             for c in self.cards:
                 c.set_active(c.index == idx)
         self._apply_focus()
+        if self.app_rules_enabled and not self.focus_enabled:
+            self._check_app_rules()
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # App rules engine
+    # ─────────────────────────────────────────────────────────────────────────
+
+    def _check_app_rules(self) -> None:
+        """Match the foreground process against rules and apply if changed."""
+        proc = get_foreground_process()
+
+        # Update the real-time process display
+        if hasattr(self, "_lbl_proc_detect"):
+            if proc:
+                has_rule = any(r.enabled and r.process.lower() == proc for r in self._rules)
+                color = ACCENT_COLOR if has_rule else "#505050"
+                self._lbl_proc_detect.setText(f"Détecté : {proc}")
+                self._lbl_proc_detect.setStyleSheet(f"font-size:10px; color:{color};")
+            else:
+                self._lbl_proc_detect.setText("")
+
+        # Find the first matching enabled rule
+        matched: AppRule | None = None
+        if proc:
+            for rule in self._rules:
+                if rule.enabled and rule.process.lower() == proc:
+                    matched = rule
+                    break
+
+        # Stability guard: require 2 consecutive ticks before acting (avoids
+        # flickering on fast alt-tab)
+        if proc != self._rule_candidate:
+            self._rule_candidate = proc
+            self._rule_ticks = 0
+            return
+        self._rule_ticks += 1
+        if self._rule_ticks < 2:
+            return
+
+        # Same rule already active → nothing to do
+        prev = self._active_rule
+        same = (matched is not None and prev is not None
+                and matched.process == prev.process)
+        if same:
+            return
+
+        if matched is None and prev is None:
+            return
+
+        # ── Leaving a rule (back to neutral) ─────────────────────────────
+        if matched is None and prev is not None:
+            self._restore_pre_rule()
+            self._active_rule = None
+            self._update_rule_status(None)
+            return
+
+        # ── Entering a rule (or switching between rules) ──────────────────
+        device = get_foreground_window_monitor()
+
+        # Save current state only when entering the first rule
+        if not self._pre_rule_bri:
+            target = [c for c in self.cards
+                      if c.isEnabled() and (not device or c.device_name == device)]
+            self._pre_rule_bri = {c.device_name: c.sl_bri.value() for c in target}
+            self._pre_rule_con = {c.device_name: c.sl_con.value() for c in target}
+            if matched.gamma is not None:
+                self._pre_rule_gamma = {c.device_name: self.gamma_value for c in target}
+            if matched.red is not None or matched.green is not None or matched.blue is not None:
+                for c in target:
+                    rgb = c.read_rgb()
+                    if rgb is not None:
+                        self._pre_rule_rgb[c.device_name] = rgb
+            self._active_rule_device = device
+
+        self._apply_app_rule(matched, device)
+        self._active_rule = matched
+        self._update_rule_status(matched)
+
+    def _apply_app_rule(self, rule: AppRule, device: str | None) -> None:
+        log.debug("Applying rule '%s' on %s: bri=%s con=%s gamma=%s rgb=(%s,%s,%s)",
+                  rule.label, device or "all",
+                  rule.brightness, rule.contrast, rule.gamma,
+                  rule.red, rule.green, rule.blue)
+        for c in self.cards:
+            if not c.isEnabled():
+                continue
+            if device and c.device_name != device:
+                continue
+            c.apply_rule_values(rule.brightness, rule.contrast)
+            c.apply_rule_rgb(rule.red, rule.green, rule.blue)
+        if rule.gamma is not None:
+            if device:
+                set_device_gamma(device, rule.gamma)
+            else:
+                set_gamma_all(rule.gamma)
+            # Update the gamma slider to reflect the change on the target monitor
+            if hasattr(self, "sl_gamma"):
+                self.sl_gamma.blockSignals(True)
+                self.sl_gamma.setValue(int(round(rule.gamma * 100)))
+                self.sl_gamma.blockSignals(False)
+            if hasattr(self, "lbl_gamma_val"):
+                self.lbl_gamma_val.setText(f"{rule.gamma:.2f}")
+
+    def _restore_pre_rule(self) -> None:
+        if not self._pre_rule_bri:
+            return
+        for c in self.cards:
+            if c.isEnabled():
+                bri = self._pre_rule_bri.get(c.device_name)
+                con = self._pre_rule_con.get(c.device_name)
+                if bri is not None or con is not None:
+                    c.apply_rule_values(bri, con)
+        for device, gamma in self._pre_rule_gamma.items():
+            set_device_gamma(device, gamma)
+            # Sync slider only if this is the active monitor device
+            if device == self._active_rule_device:
+                if hasattr(self, "sl_gamma"):
+                    self.sl_gamma.blockSignals(True)
+                    self.sl_gamma.setValue(int(round(gamma * 100)))
+                    self.sl_gamma.blockSignals(False)
+                if hasattr(self, "lbl_gamma_val"):
+                    self.lbl_gamma_val.setText(f"{gamma:.2f}")
+        for device, rgb in self._pre_rule_rgb.items():
+            for c in self.cards:
+                if c.device_name == device and c.isEnabled():
+                    c.apply_rule_rgb(*rgb)
+        self._pre_rule_bri.clear()
+        self._pre_rule_con.clear()
+        self._pre_rule_gamma.clear()
+        self._pre_rule_rgb.clear()
+        self._active_rule_device = None
+
+    def _update_rule_status(self, rule: AppRule | None) -> None:
+        """Update the status label in the app-rules section."""
+        if not hasattr(self, "_lbl_rule_status"):
+            return
+        if rule:
+            self._lbl_rule_status.setText(f"● {rule.label}")
+            self._lbl_rule_status.setStyleSheet(
+                f"font-size:11px; color:{ACCENT_COLOR}; font-weight:600;"
+            )
+        else:
+            self._lbl_rule_status.setText("Aucune règle active")
+            self._lbl_rule_status.setStyleSheet(
+                f"font-size:11px; color:#606060;"
+            )
+
+    def _set_app_rules_enabled(self, enabled: bool) -> None:
+        self.app_rules_enabled = enabled
+        if not enabled:
+            self._restore_pre_rule()
+            self._active_rule = None
+            self._rule_candidate = None
+            self._rule_ticks = 0
+            self._update_rule_status(None)
+
+    def _open_app_rules_dialog(self) -> None:
+        from lumina_control.ui.app_rules_dialog import AppRulesDialog
+        dlg = AppRulesDialog(
+            rules=self._rules,
+            detection_active=self.app_rules_enabled,
+            parent=self,
+        )
+        dlg.rules_changed.connect(self._on_rules_changed)
+        dlg.exec()
+
+    def _on_rules_changed(self, rules: list) -> None:
+        self._rules = rules
+        self._rule_mgr.save(rules)
+        # Reset active rule so it gets re-evaluated on next poll
+        self._active_rule = None
+        self._rule_candidate = None
+        self._rule_ticks = 0
 
     # ─────────────────────────────────────────────────────────────────────────
     # Global brightness

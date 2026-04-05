@@ -58,3 +58,7 @@ def get_profile_path() -> str:
 
 def get_settings_path() -> str:
     return os.path.join(get_app_data_dir(), "settings.json")
+
+
+def get_rules_path() -> str:
+    return os.path.join(get_app_data_dir(), "app_rules.json")

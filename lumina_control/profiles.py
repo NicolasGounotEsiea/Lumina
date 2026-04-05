@@ -18,6 +18,7 @@ DEFAULT_SETTINGS: dict = {
     "gamma_value": 1.0,
     "focus_enabled": False,
     "focus_dim": 20,
+    "app_rules_enabled": False,
 }
 
 
