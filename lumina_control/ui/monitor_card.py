@@ -86,8 +86,8 @@ class MonitorCard(QFrame):
         layout.addWidget(self.lbl_details)
 
         # Brightness / contrast sliders
-        self._add_slider_row(layout, "Luminosité", self._on_brightness_change, "bri")
-        self._add_slider_row(layout, "Contraste",  self._on_contrast_change,   "con")
+        self._add_slider_row(layout, "☀  Lum.", self._on_brightness_change, "bri")
+        self._add_slider_row(layout, "◑  Con.", self._on_contrast_change,   "con")
 
     def _screen_details(self) -> str:  # kept for compat, prefer descriptor.details
         return self.descriptor.details
@@ -97,7 +97,7 @@ class MonitorCard(QFrame):
         row.setSpacing(8)
         lbl = QLabel(label)
         lbl.setObjectName("Subtle")
-        lbl.setFixedWidth(62)
+        lbl.setFixedWidth(56)
         sl = QSlider(Qt.Horizontal)
         sl.setRange(0, 100)
         sl.valueChanged.connect(slot)

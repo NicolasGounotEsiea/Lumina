@@ -27,6 +27,49 @@ from lumina_control.ui.calibration import CalibrationWizard
 log = logging.getLogger(__name__)
 
 
+class _CollapsibleSection(QWidget):
+    """Expandable / collapsible labelled panel used inside MainWindow."""
+
+    def __init__(self, title: str, expanded: bool = True, parent=None) -> None:
+        super().__init__(parent)
+        self._title = title
+
+        vbox = QVBoxLayout(self)
+        vbox.setSpacing(0)
+        vbox.setContentsMargins(0, 0, 0, 0)
+
+        self._btn = QPushButton()
+        self._btn.setObjectName("CollapsibleHeader")
+        self._btn.setCheckable(True)
+        self._btn.setChecked(expanded)
+        self._btn.setCursor(Qt.PointingHandCursor)
+        self._btn.clicked.connect(self._toggle)
+        self._set_btn_text(expanded)
+        vbox.addWidget(self._btn)
+
+        self._body = QWidget()
+        body_l = QVBoxLayout(self._body)
+        body_l.setContentsMargins(2, 6, 2, 10)
+        body_l.setSpacing(10)
+        self._body_layout = body_l
+        self._body.setVisible(expanded)
+        vbox.addWidget(self._body)
+
+    def _set_btn_text(self, expanded: bool) -> None:
+        arrow = "▾" if expanded else "▸"
+        self._btn.setText(f"  {arrow}   {self._title}")
+
+    def _toggle(self, checked: bool) -> None:
+        self._set_btn_text(checked)
+        self._body.setVisible(checked)
+
+    def add_widget(self, w: QWidget) -> None:
+        self._body_layout.addWidget(w)
+
+    def add_layout(self, layout) -> None:
+        self._body_layout.addLayout(layout)
+
+
 class MainWindow(QWidget):
 
     def __init__(self) -> None:
@@ -83,9 +126,9 @@ class MainWindow(QWidget):
         self.container = QWidget()
         self.container.setObjectName("Container")
         eff = QGraphicsDropShadowEffect(self)
-        eff.setBlurRadius(32)
-        eff.setColor(QColor(0, 0, 0, 180))
-        eff.setOffset(0, 6)
+        eff.setBlurRadius(28)
+        eff.setColor(QColor(0, 0, 0, 160))
+        eff.setOffset(0, 4)
         self.container.setGraphicsEffect(eff)
         outer_l.addWidget(self.container)
 
@@ -93,77 +136,86 @@ class MainWindow(QWidget):
         container_l.setSpacing(0)
         container_l.setContentsMargins(0, 0, 0, 0)
 
-        # ── Fixed header ─────────────────────────────
+        # ── Title bar ─────────────────────────────────
         header = QWidget()
+        header.setObjectName("TitleBar")
         header_l = QHBoxLayout(header)
-        header_l.setContentsMargins(16, 12, 12, 12)
-        header_l.setSpacing(10)
+        header_l.setContentsMargins(14, 10, 10, 10)
+        header_l.setSpacing(6)
 
         icon_lbl = QLabel("◈")
-        icon_lbl.setStyleSheet(f"color: {ACCENT_COLOR}; font-size: 20px; padding: 0;")
-
-        title_stack = QVBoxLayout()
-        title_stack.setSpacing(1)
+        icon_lbl.setStyleSheet(f"color:{ACCENT_COLOR}; font-size:17px; padding:0;")
         title_lbl = QLabel(APP_NAME)
         title_lbl.setObjectName("AppTitle")
-        subtitle_lbl = QLabel("Multi-écrans · contrôle rapide")
-        subtitle_lbl.setObjectName("AppSubtitle")
-        title_stack.addWidget(title_lbl)
-        title_stack.addWidget(subtitle_lbl)
+
+        btn_refresh = QPushButton("↻")
+        btn_refresh.setProperty("class", "icon-btn")
+        btn_refresh.setFixedSize(28, 28)
+        btn_refresh.setCursor(Qt.PointingHandCursor)
+        btn_refresh.setToolTip("Rafraîchir les écrans")
+        btn_refresh.clicked.connect(self.refresh)
 
         btn_close = QPushButton("✕")
         btn_close.setObjectName("CloseWinBtn")
-        btn_close.setFixedSize(30, 30)
+        btn_close.setFixedSize(28, 28)
         btn_close.setCursor(Qt.PointingHandCursor)
-        btn_close.setToolTip("Masquer la fenêtre")
+        btn_close.setToolTip("Masquer")
         btn_close.clicked.connect(self.hide)
 
         header_l.addWidget(icon_lbl)
-        header_l.addLayout(title_stack)
+        header_l.addSpacing(4)
+        header_l.addWidget(title_lbl)
         header_l.addStretch()
+        header_l.addWidget(btn_refresh)
         header_l.addWidget(btn_close)
         container_l.addWidget(header)
 
-        sep = QFrame()
-        sep.setFrameShape(QFrame.HLine)
-        sep.setStyleSheet(f"background: {BORDER_COLOR}; max-height: 1px; border: none;")
-        container_l.addWidget(sep)
+        sep_top = QFrame()
+        sep_top.setFrameShape(QFrame.HLine)
+        sep_top.setStyleSheet(f"background:{BORDER_COLOR}; max-height:1px; border:none;")
+        container_l.addWidget(sep_top)
 
         # ── Scrollable content ────────────────────────
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-        scroll.setMaximumHeight(570)
+        scroll.setMaximumHeight(600)
 
         content_w = QWidget()
         self.main_l = QVBoxLayout(content_w)
-        self.main_l.setSpacing(12)
-        self.main_l.setContentsMargins(15, 14, 15, 14)
+        self.main_l.setSpacing(8)
+        self.main_l.setContentsMargins(12, 12, 12, 14)
         scroll.setWidget(content_w)
         container_l.addWidget(scroll)
 
+        # ── Content sections ──────────────────────────
+        self._build_brightness_strip()
         self._build_quick_section()
+
         self.main_l.addWidget(self._sep())
+
+        # Monitor cards (primary content)
+        screens_hdr = QHBoxLayout()
+        screens_hdr.addWidget(self._section_label("ÉCRANS"))
+        screens_hdr.addStretch()
+        self.main_l.addLayout(screens_hdr)
+        self.mon_l = QVBoxLayout()
+        self.mon_l.setSpacing(8)
+        self.main_l.addLayout(self.mon_l)
+
+        self.main_l.addWidget(self._sep())
+
+        # Advanced settings as collapsible panels
         self._build_sync_section()
-        self.main_l.addWidget(self._sep())
         self._build_gamma_section()
+        self._build_focus_section()
+        self._build_snapshot_section()
+
         self.main_l.addWidget(self._sep())
         self._build_tools_section()
-        self.main_l.addWidget(self._sep())
-        self._build_snapshot_section()
-        self.main_l.addWidget(self._sep())
-        self._build_focus_section()
-        self.main_l.addWidget(self._sep())
-
-        # Monitor cards zone
-        self.main_l.addWidget(self._section_label("ÉCRANS"))
-        self.mon_l = QVBoxLayout()
-        self.mon_l.setSpacing(10)
-        self.main_l.addLayout(self.mon_l)
         self.main_l.addStretch()
 
-        # Footer
         btn_quit = QPushButton("Quitter l'application")
         btn_quit.setObjectName("QuitBtn")
         btn_quit.setCursor(Qt.PointingHandCursor)
@@ -172,68 +224,70 @@ class MainWindow(QWidget):
 
     # ── Section builders ──────────────────────────────────────────────────────
 
-    def _build_quick_section(self) -> None:
-        hdr = QHBoxLayout()
-        hdr.addWidget(self._section_label("RÉGLAGES RAPIDES"))
-        hdr.addStretch()
-        btn_ref = QPushButton("↻ Rafraîchir")
-        btn_ref.setProperty("class", "pill-muted")
-        btn_ref.setProperty("quick", "true")
-        btn_ref.setToolTip("Rafraîchir la liste des écrans")
-        btn_ref.clicked.connect(self.refresh)
-        hdr.addWidget(btn_ref)
-        self.main_l.addLayout(hdr)
+    def _build_brightness_strip(self) -> None:
+        """Global brightness — always visible, visually prominent."""
+        strip = QWidget()
+        strip.setObjectName("BrightnessStrip")
+        sl = QVBoxLayout(strip)
+        sl.setContentsMargins(14, 12, 14, 12)
+        sl.setSpacing(8)
 
-        row_glob = QHBoxLayout()
+        h = QHBoxLayout()
         lbl = QLabel("Luminosité globale")
         lbl.setObjectName("Subtle")
+        self.lbl_glob_val = QLabel("50%")
+        self.lbl_glob_val.setObjectName("ValueBadge")
+        h.addWidget(lbl)
+        h.addStretch()
+        h.addWidget(self.lbl_glob_val)
+        sl.addLayout(h)
+
         self.sl_glob = QSlider(Qt.Horizontal)
         self.sl_glob.setRange(0, 100)
         self.sl_glob.setValue(50)
         self.sl_glob.sliderReleased.connect(self._apply_glob)
         self.sl_glob.valueChanged.connect(lambda v: self.lbl_glob_val.setText(f"{v}%"))
-        self.lbl_glob_val = QLabel("50%")
-        self.lbl_glob_val.setObjectName("ValueBadge")
-        self.lbl_glob_val.setFixedWidth(40)
-        self.lbl_glob_val.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        row_glob.addWidget(lbl)
-        row_glob.addWidget(self.sl_glob)
-        row_glob.addWidget(self.lbl_glob_val)
-        self.main_l.addLayout(row_glob)
+        sl.addWidget(self.sl_glob)
 
+        self.main_l.addWidget(strip)
+
+    def _build_quick_section(self) -> None:
+        # Preset pills
         h_pre = QHBoxLayout()
+        h_pre.setSpacing(6)
         btn_day = QPushButton("☀  Jour  80%")
         btn_day.setProperty("class", "pill")
-        btn_day.setProperty("quick", "true")
         btn_day.setStyleSheet(
-            f"color:{WARM_COLOR}; border-color:rgba(251,191,36,0.3);"
-            f" background:rgba(251,191,36,0.08);"
+            f"color:{WARM_COLOR}; border-color:rgba(252,185,0,0.35);"
+            f" background:rgba(252,185,0,0.08);"
         )
+        btn_day.setCursor(Qt.PointingHandCursor)
         btn_day.clicked.connect(partial(self._set_glob, 80))
         btn_night = QPushButton("☾  Nuit  25%")
         btn_night.setProperty("class", "pill")
-        btn_night.setProperty("quick", "true")
+        btn_night.setCursor(Qt.PointingHandCursor)
         btn_night.clicked.connect(partial(self._set_glob, 25))
         h_pre.addWidget(btn_day)
         h_pre.addWidget(btn_night)
         self.main_l.addLayout(h_pre)
 
-        h_actions = QHBoxLayout()
+        # Power row
+        h_pow = QHBoxLayout()
+        h_pow.setSpacing(6)
         for label, slot, cls in [
-            ("⏻  Allumer tout",  partial(self._set_all_power, True),  "pill"),
-            ("⭘  Éteindre tout", partial(self._set_all_power, False), "pill-muted"),
-            ("⏵  Réveiller",     wake_all_monitors,                   "pill-muted"),
+            ("⏻  Allumer",   partial(self._set_all_power, True),  "pill"),
+            ("⭘  Éteindre",  partial(self._set_all_power, False), "pill-muted"),
+            ("⏵  Réveiller", wake_all_monitors,                   "pill-muted"),
         ]:
             btn = QPushButton(label)
             btn.setProperty("class", cls)
-            btn.setProperty("quick", "true")
-            btn.setProperty("quickRole", "action")
+            btn.setCursor(Qt.PointingHandCursor)
             btn.clicked.connect(slot)
-            h_actions.addWidget(btn)
-        self.main_l.addLayout(h_actions)
+            h_pow.addWidget(btn)
+        self.main_l.addLayout(h_pow)
 
     def _build_sync_section(self) -> None:
-        self.main_l.addWidget(self._section_label("SYNCHRONISATION"))
+        sec = _CollapsibleSection("SYNCHRONISATION", expanded=False)
 
         h_sync = QHBoxLayout()
         self.chk_sync = QCheckBox("Synchroniser les écrans")
@@ -241,63 +295,68 @@ class MainWindow(QWidget):
         lbl_master = QLabel("Maître")
         lbl_master.setObjectName("Subtle")
         self.cmb_master = QComboBox()
-        self.cmb_master.setFixedWidth(130)
+        self.cmb_master.setFixedWidth(120)
         self.cmb_master.currentIndexChanged.connect(self._set_sync_master)
         h_sync.addWidget(self.chk_sync)
         h_sync.addStretch()
         h_sync.addWidget(lbl_master)
         h_sync.addWidget(self.cmb_master)
-        self.main_l.addLayout(h_sync)
+        sec.add_layout(h_sync)
 
         h2 = QHBoxLayout()
         self.chk_sync_rgb = QCheckBox("Gains RGB")
         self.chk_sync_rgb.toggled.connect(self._set_sync_rgb_enabled)
         self.btn_sync_now = QPushButton("Sync maintenant")
         self.btn_sync_now.setProperty("class", "pill-muted")
+        self.btn_sync_now.setCursor(Qt.PointingHandCursor)
         self.btn_sync_now.clicked.connect(self.sync_now)
         h2.addWidget(self.chk_sync_rgb)
         h2.addStretch()
         h2.addWidget(self.btn_sync_now)
-        self.main_l.addLayout(h2)
+        sec.add_layout(h2)
 
         h3 = QHBoxLayout()
         self.chk_sync_relative = QCheckBox("Décalages relatifs")
         self.chk_sync_relative.toggled.connect(self._set_sync_relative_enabled)
         h3.addWidget(self.chk_sync_relative)
         h3.addStretch()
-        self.main_l.addLayout(h3)
+        sec.add_layout(h3)
 
-        for attr, label, lo, hi, slot_lbl, slot_rel in [
+        for attr, label, lo, hi, lbl_attr, slot_fn in [
             ("sl_sync_bri", "Offset lum.", -40, 40,
              "lbl_sync_bri_val", self._update_sync_bri_label),
-            ("sl_sync_con", "Offset cont.", -40, 40,
+            ("sl_sync_con", "Offset con.", -40, 40,
              "lbl_sync_con_val", self._update_sync_con_label),
         ]:
             row = QHBoxLayout()
             lbl = QLabel(label)
             lbl.setObjectName("Subtle")
+            lbl.setFixedWidth(72)
             sl = QSlider(Qt.Horizontal)
             sl.setRange(lo, hi)
             sl.setValue(0)
-            sl.valueChanged.connect(slot_rel)
+            sl.valueChanged.connect(slot_fn)
             sl.sliderReleased.connect(self._apply_sync_offsets)
-            val_lbl = QLabel("0%")
+            val_lbl = QLabel("+0%")
             val_lbl.setObjectName("ValueBadge")
             val_lbl.setFixedWidth(40)
             val_lbl.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
             row.addWidget(lbl)
             row.addWidget(sl)
             row.addWidget(val_lbl)
-            self.main_l.addLayout(row)
+            sec.add_layout(row)
             setattr(self, attr, sl)
-            setattr(self, slot_lbl, val_lbl)
+            setattr(self, lbl_attr, val_lbl)
+
+        self.main_l.addWidget(sec)
 
     def _build_gamma_section(self) -> None:
-        self.main_l.addWidget(self._section_label("CORRECTION GAMMA GPU"))
+        sec = _CollapsibleSection("GAMMA GPU", expanded=False)
 
         row = QHBoxLayout()
         lbl = QLabel("Gamma")
         lbl.setObjectName("Subtle")
+        lbl.setFixedWidth(60)
         self.sl_gamma = QSlider(Qt.Horizontal)
         self.sl_gamma.setRange(60, 240)
         self.sl_gamma.setValue(100)
@@ -310,73 +369,50 @@ class MainWindow(QWidget):
         row.addWidget(lbl)
         row.addWidget(self.sl_gamma)
         row.addWidget(self.lbl_gamma_val)
-        self.main_l.addLayout(row)
+        sec.add_layout(row)
 
         h_btn = QHBoxLayout()
+        h_btn.setSpacing(6)
         self.btn_gamma_import = QPushButton("Importer")
         self.btn_gamma_import.setProperty("class", "pill-muted")
+        self.btn_gamma_import.setCursor(Qt.PointingHandCursor)
         self.btn_gamma_import.clicked.connect(self._import_gamma)
         self.btn_gamma_export = QPushButton("Exporter")
         self.btn_gamma_export.setProperty("class", "pill-muted")
+        self.btn_gamma_export.setCursor(Qt.PointingHandCursor)
         self.btn_gamma_export.clicked.connect(self._export_gamma)
-        btn_reset = QPushButton("Reset gamma")
+        btn_reset = QPushButton("Reset")
         btn_reset.setProperty("class", "pill-muted")
+        btn_reset.setCursor(Qt.PointingHandCursor)
         btn_reset.clicked.connect(self.reset_gamma)
         h_btn.addWidget(self.btn_gamma_import)
         h_btn.addWidget(self.btn_gamma_export)
         h_btn.addStretch()
         h_btn.addWidget(btn_reset)
-        self.main_l.addLayout(h_btn)
+        sec.add_layout(h_btn)
 
-    def _build_tools_section(self) -> None:
-        self.main_l.addWidget(self._section_label("OUTILS"))
-        h = QHBoxLayout()
-        btn_patterns = QPushButton("Patterns plein écran")
-        btn_patterns.setProperty("class", "pill")
-        btn_patterns.setProperty("quick", "true")
-        btn_patterns.clicked.connect(self.show_patterns)
-        btn_wizard = QPushButton("Calibrage guidé")
-        btn_wizard.setProperty("class", "pill-muted")
-        btn_wizard.clicked.connect(self.show_calibration_wizard)
-        h.addWidget(btn_patterns)
-        h.addWidget(btn_wizard)
-        self.main_l.addLayout(h)
-
-    def _build_snapshot_section(self) -> None:
-        self.main_l.addWidget(self._section_label("INSTANTANÉ"))
-        h = QHBoxLayout()
-        btn_save = QPushButton("Sauver")
-        btn_save.setProperty("class", "pill")
-        btn_save.clicked.connect(self.save_snapshot)
-        btn_restore = QPushButton("Restaurer")
-        btn_restore.setProperty("class", "pill-muted")
-        btn_restore.clicked.connect(self.restore_snapshot)
-        self.lbl_snapshot = QLabel("Aucun instantané")
-        self.lbl_snapshot.setObjectName("Subtle")
-        h.addWidget(btn_save)
-        h.addWidget(btn_restore)
-        h.addStretch()
-        h.addWidget(self.lbl_snapshot)
-        self.main_l.addLayout(h)
+        self.main_l.addWidget(sec)
 
     def _build_focus_section(self) -> None:
+        sec = _CollapsibleSection("MODE FOCUS", expanded=False)
+
         h = QHBoxLayout()
-        h.addWidget(self._section_label("MODE FOCUS"))
-        h.addStretch()
+        lbl_help = QLabel("Écran actif lumineux, autres atténués.")
+        lbl_help.setObjectName("Subtle")
         self.btn_focus = QPushButton("Désactivé")
         self.btn_focus.setObjectName("FocusToggle")
         self.btn_focus.setCheckable(True)
+        self.btn_focus.setCursor(Qt.PointingHandCursor)
         self.btn_focus.toggled.connect(lambda v: self.set_focus_enabled(v, source="ui"))
+        h.addWidget(lbl_help)
+        h.addStretch()
         h.addWidget(self.btn_focus)
-        self.main_l.addLayout(h)
-
-        lbl_help = QLabel("Garde l'écran actif lumineux, assombrit les autres.")
-        lbl_help.setObjectName("Subtle")
-        self.main_l.addWidget(lbl_help)
+        sec.add_layout(h)
 
         row = QHBoxLayout()
         lbl_dim = QLabel("Atténuation")
         lbl_dim.setObjectName("Subtle")
+        lbl_dim.setFixedWidth(76)
         self.sl_focus_dim = QSlider(Qt.Horizontal)
         self.sl_focus_dim.setRange(0, 60)
         self.sl_focus_dim.setValue(self.focus_dim)
@@ -389,17 +425,54 @@ class MainWindow(QWidget):
         row.addWidget(lbl_dim)
         row.addWidget(self.sl_focus_dim)
         row.addWidget(self.lbl_focus_dim)
-        self.main_l.addLayout(row)
+        sec.add_layout(row)
+
+        self.main_l.addWidget(sec)
+
+    def _build_snapshot_section(self) -> None:
+        sec = _CollapsibleSection("INSTANTANÉ", expanded=True)
+
+        h = QHBoxLayout()
+        h.setSpacing(6)
+        btn_save = QPushButton("Sauver")
+        btn_save.setProperty("class", "pill")
+        btn_save.setCursor(Qt.PointingHandCursor)
+        btn_save.clicked.connect(self.save_snapshot)
+        btn_restore = QPushButton("Restaurer")
+        btn_restore.setProperty("class", "pill-muted")
+        btn_restore.setCursor(Qt.PointingHandCursor)
+        btn_restore.clicked.connect(self.restore_snapshot)
+        self.lbl_snapshot = QLabel("Aucun instantané")
+        self.lbl_snapshot.setObjectName("Subtle")
+        h.addWidget(btn_save)
+        h.addWidget(btn_restore)
+        h.addStretch()
+        h.addWidget(self.lbl_snapshot)
+        sec.add_layout(h)
+
+        self.main_l.addWidget(sec)
+
+    def _build_tools_section(self) -> None:
+        self.main_l.addWidget(self._section_label("OUTILS"))
+        h = QHBoxLayout()
+        h.setSpacing(6)
+        btn_patterns = QPushButton("Patterns plein écran")
+        btn_patterns.setProperty("class", "pill")
+        btn_patterns.setCursor(Qt.PointingHandCursor)
+        btn_patterns.clicked.connect(self.show_patterns)
+        btn_wizard = QPushButton("Calibrage guidé")
+        btn_wizard.setProperty("class", "pill-muted")
+        btn_wizard.setCursor(Qt.PointingHandCursor)
+        btn_wizard.clicked.connect(self.show_calibration_wizard)
+        h.addWidget(btn_patterns)
+        h.addWidget(btn_wizard)
+        self.main_l.addLayout(h)
 
     # ── Helper widgets ────────────────────────────────────────────────────────
 
     def _section_label(self, text: str) -> QLabel:
         lbl = QLabel(text)
         lbl.setObjectName("SectionTitle")
-        lbl.setStyleSheet(
-            f"color:#4e5d78; font-size:10px; font-weight:700;"
-            f" padding-left:8px; border-left:2px solid {ACCENT_COLOR};"
-        )
         return lbl
 
     def _sep(self) -> QFrame:

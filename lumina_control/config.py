@@ -4,23 +4,26 @@ import sys
 
 APP_NAME = "Lumina Control"
 APP_VERSION = "1.0.0"
-APP_WIDTH = 400
+APP_WIDTH = 420
 SINGLE_INSTANCE_SERVER = "LuminaControl_SingleInstance"
 
-# ── Colour palette ────────────────────────────────────────────────────────────
-ACCENT_COLOR  = "#38bdf8"
-ACCENT_DIM    = "#0ea5e9"
-ACCENT_SUBTLE = "rgba(56,189,248,0.12)"
-BG_COLOR      = "#0d1117"
-CARD_COLOR    = "#161b27"
-CARD_HOVER    = "#1d2336"
-BORDER_COLOR  = "#1f2535"
-BORDER_ACCENT = "#2d3756"
-TEXT_COLOR    = "#e2e8f0"
-TEXT_MUTED    = "#4e5d78"
-DANGER_COLOR  = "#f87171"
-WARM_COLOR    = "#fbbf24"
-SUCCESS_COLOR = "#34d399"
+# ── Colour palette  (Windows 11 dark Fluent Design) ──────────────────────────
+ACCENT_COLOR  = "#60CDFF"              # Windows 11 blue (light variant)
+ACCENT_DIM    = "#4AB8F0"
+ACCENT_SUBTLE = "rgba(96,205,255,0.12)"
+
+BG_COLOR      = "#202020"             # Window background (Win 11 dark)
+CARD_COLOR    = "#2B2B2B"             # Elevated surface / card
+CARD_HOVER    = "#363636"             # Card hover
+BORDER_COLOR  = "#282828"             # Very subtle dividers
+BORDER_ACCENT = "#484848"             # Card / control borders
+
+TEXT_COLOR    = "#F0F0F0"             # Primary text
+TEXT_MUTED    = "#8A8A8A"             # Secondary / disabled text
+
+DANGER_COLOR  = "#FF6F6F"             # Destructive / error
+WARM_COLOR    = "#FCB900"             # Warning / warm preset
+SUCCESS_COLOR = "#6CCB5F"             # Success / on-state
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
 
@@ -28,7 +31,6 @@ def resource_path(rel_path: str) -> str:
     """Return absolute path to a bundled resource (PyInstaller-aware)."""
     if hasattr(sys, "_MEIPASS"):
         return os.path.join(sys._MEIPASS, rel_path)
-    # config.py lives in lumina_control/; resources are in the project root
     return os.path.normpath(os.path.join(os.path.dirname(__file__), "..", rel_path))
 
 
@@ -41,7 +43,7 @@ def get_app_data_dir() -> str:
     global _app_data_dir
     if _app_data_dir:
         return _app_data_dir
-    from PySide6.QtCore import QStandardPaths  # deferred: needs QApplication
+    from PySide6.QtCore import QStandardPaths
     base = QStandardPaths.writableLocation(QStandardPaths.AppDataLocation)
     if not base:
         base = os.path.join(os.path.expanduser("~"), "AppData", "Roaming", APP_NAME)
