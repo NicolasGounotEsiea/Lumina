@@ -4,6 +4,7 @@ from __future__ import annotations
 import logging
 
 from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QColor, QPainter, QPainterPath
 from PySide6.QtWidgets import (
     QCheckBox, QComboBox, QDialog, QFrame, QHBoxLayout, QLabel,
     QLineEdit, QPushButton, QScrollArea, QSlider, QVBoxLayout, QWidget,
@@ -12,7 +13,7 @@ from PySide6.QtWidgets import (
 from lumina_control.app_rules import AppRule, DEFAULT_RULES
 from lumina_control.config import (
     ACCENT_COLOR, BORDER_ACCENT, BORDER_COLOR,
-    CARD_COLOR, DANGER_COLOR, TEXT_COLOR, TEXT_MUTED,
+    CARD_COLOR, TEXT_COLOR, TEXT_MUTED,
 )
 
 log = logging.getLogger(__name__)
@@ -31,16 +32,10 @@ class _RuleRow(QFrame):
     def __init__(self, rule: AppRule, index: int, parent=None) -> None:
         super().__init__(parent)
         self._index = index
-        self.setObjectName("RuleRow")
         self.setMinimumHeight(60)
-        # Scoped to this exact frame only — doesn't override descendants
-        self.setStyleSheet(
-            "QFrame#RuleRow {"
-            f"  background:{CARD_COLOR};"
-            f"  border-radius:8px;"
-            f"  border:1px solid {BORDER_ACCENT};"
-            "}"
-        )
+        # No setStyleSheet here — using paintEvent instead to avoid cascade
+        # interference that would block child buttons from inheriting the
+        # global app stylesheet (QPushButton[class="icon-btn"] etc.)
 
         h = QHBoxLayout(self)
         h.setContentsMargins(10, 10, 10, 10)
@@ -101,6 +96,15 @@ class _RuleRow(QFrame):
         btn_del.clicked.connect(lambda: self.delete_requested.emit(self._index))
         h.addWidget(btn_del)
 
+    def paintEvent(self, event) -> None:
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing)
+        path = QPainterPath()
+        path.addRoundedRect(self.rect(), 8, 8)
+        p.fillPath(path, QColor(CARD_COLOR))
+        p.setPen(QColor(BORDER_ACCENT))
+        p.drawPath(path)
+
     def set_enabled_visual(self, enabled: bool) -> None:
         self._lbl_name.setStyleSheet(
             f"font-size:13px; font-weight:600;"
@@ -119,7 +123,7 @@ class _RuleFormDialog(QDialog):
         super().__init__(parent)
         is_edit = rule is not None
         self.setWindowTitle("Modifier la règle" if is_edit else "Nouvelle règle")
-        self.setMinimumSize(460, 660)
+        self.setMinimumWidth(460)
         self.setWindowFlags(Qt.Dialog | Qt.WindowCloseButtonHint)
         # DO NOT set a stylesheet here — inherit from the app global stylesheet
 
@@ -269,9 +273,11 @@ class _RuleFormDialog(QDialog):
         layout.addWidget(self._rgb_container)
         self._rgb_container.setVisible(has_rgb)
 
-        self._chk_skip_rgb.toggled.connect(
-            lambda skip: self._rgb_container.setVisible(not skip)
-        )
+        def _on_rgb_toggle(skip: bool) -> None:
+            self._rgb_container.setVisible(not skip)
+            self.adjustSize()
+
+        self._chk_skip_rgb.toggled.connect(_on_rgb_toggle)
         # Connect sliders to update swatch
         for sl in (self._sl_r, self._sl_g, self._sl_b):
             sl.valueChanged.connect(self._update_swatch)
@@ -315,11 +321,16 @@ class _RuleFormDialog(QDialog):
         return lbl
 
     @staticmethod
-    def _make_sep() -> QFrame:
-        f = QFrame()
-        f.setFrameShape(QFrame.HLine)
-        f.setStyleSheet(f"background:{BORDER_COLOR}; max-height:1px; border:none;")
-        return f
+    def _make_sep() -> QWidget:
+        w = QWidget()
+        w.setFixedHeight(1)
+        # Paint via palette — no stylesheet, no cascade interference
+        from PySide6.QtGui import QPalette
+        pal = w.palette()
+        pal.setColor(QPalette.Window, QColor(BORDER_COLOR))
+        w.setAutoFillBackground(True)
+        w.setPalette(pal)
+        return w
 
     def _make_slider_row(
         self, layout: QVBoxLayout, label: str,
@@ -575,11 +586,15 @@ class AppRulesDialog(QDialog):
     # ── List helpers ──────────────────────────────────────────────────────────
 
     @staticmethod
-    def _sep() -> QFrame:
-        f = QFrame()
-        f.setFrameShape(QFrame.HLine)
-        f.setStyleSheet(f"background:{BORDER_COLOR}; max-height:1px; border:none;")
-        return f
+    def _sep() -> QWidget:
+        from PySide6.QtGui import QPalette
+        w = QWidget()
+        w.setFixedHeight(1)
+        pal = w.palette()
+        pal.setColor(QPalette.Window, QColor(BORDER_COLOR))
+        w.setAutoFillBackground(True)
+        w.setPalette(pal)
+        return w
 
     def _rebuild_list(self) -> None:
         while self._list_l.count() > 1:
