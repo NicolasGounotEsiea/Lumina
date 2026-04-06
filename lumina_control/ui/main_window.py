@@ -551,8 +551,8 @@ class MainWindow(QWidget):
         banner.setObjectName("UpdateBanner")
         banner.setStyleSheet(
             "QWidget#UpdateBanner{"
-            f"background:rgba(96,205,255,0.10);"
-            f"border:1px solid rgba(96,205,255,0.35);"
+            "background:rgba(96,205,255,0.10);"
+            "border:1px solid rgba(96,205,255,0.35);"
             "border-radius:6px;}"
         )
         hl = QHBoxLayout(banner)
