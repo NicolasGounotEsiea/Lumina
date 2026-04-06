@@ -12,6 +12,8 @@
 | **Gamma** | Correction GPU indépendante via `SetDeviceGammaRamp` (gdi32) |
 | **Sync** | Mode maître/esclave absolu ou avec décalage relatif par écran |
 | **Focus** | Détection de la fenêtre active (win32api) ; assombrit les écrans inactifs |
+| **Profils par app** | Règles automatiques déclenchées par l'application en focus (500 ms) — luminosité, contraste, gamma, gains RVB ; s'applique uniquement sur l'écran contenant la fenêtre |
+| **Colorimétrie** | Gains R/V/B DDC-CI par règle d'application, avec aperçu swatch en direct |
 | **Calibrage** | Dialog RGB par écran + assistant guidé en 6 étapes avec patterns plein écran |
 | **Snapshots** | Sauvegarde / restauration de profils dans `%APPDATA%\LuminaControl` |
 | **Instance unique** | Guard via `QLocalServer` — relance = réafficher la fenêtre |
@@ -57,12 +59,14 @@ Lumina/
 │   ├── config.py                # Constantes couleur, chemins AppData
 │   ├── style.py                 # STYLESHEET Qt complet (dark theme)
 │   ├── profiles.py              # ProfileManager — snapshots & settings JSON
-│   ├── utils.py                 # Gamma (gdi32), wake monitors, active screen
+│   ├── utils.py                 # Gamma (gdi32), wake monitors, active/foreground screen
 │   ├── monitor_enumerate.py     # Énumération stable via EnumDisplayMonitors
+│   ├── app_rules.py             # AppRule dataclass + AppRuleManager (persistance JSON)
 │   └── ui/
 │       ├── tray.py              # QSystemTrayIcon + menu contextuel
-│       ├── main_window.py       # Panneau flottant principal
-│       ├── monitor_card.py      # Widget par écran (bri/con/power/calibrage)
+│       ├── main_window.py       # Panneau flottant principal + moteur de règles
+│       ├── monitor_card.py      # Widget par écran (bri/con/power/calibrage/RGB)
+│       ├── app_rules_dialog.py  # Dialog CRUD des profils par application
 │       ├── calibration.py       # CalibrationDialog + CalibrationWizard
 │       └── patterns.py          # PatternWindow — patterns plein écran
 ├── build.ps1
@@ -82,6 +86,8 @@ Lumina/
 | `Tray` | Wraps `QSystemTrayIcon`, possède `MainWindow`. |
 | `ProfileManager` | Lecture/écriture JSON — snapshots et paramètres persistants. |
 | `MonitorDescriptor` | Dataclass stable : `device_name`, géométrie, handle DDC-CI. |
+| `AppRule` | Règle par application : process, bri, con, gamma, R, G, B, enabled. |
+| `AppRuleManager` | Chargement/sauvegarde des règles dans `app_rules.json`. |
 
 ### Correspondance DDC-CI ↔ écrans (B1)
 
@@ -120,7 +126,12 @@ Voir les [issues ouvertes](https://github.com/NicolasGounotEsiea/Lumina/issues) 
 - [ ] B4 — Profils nommés multiples (save/load/delete)
 - [ ] B5 — Luminosité planifiée (règles horaires, lever/coucher)
 - [ ] B6 — Mode nuit / température de couleur (gamma warm tint)
-- [ ] B7 — Règles par application (auto-dim pour certains process)
+- [x] B7 — Règles par application (auto-dim/calibrage pour certains process)
+  - [x] Détection foreground process 500 ms + garde de stabilité
+  - [x] Luminosité, contraste, gamma, gains RVB DDC-CI par règle
+  - [x] Ciblage par écran (`MonitorFromWindow`) — seul l'écran actif est affecté
+  - [x] Colorimétrie R/V/B avec aperçu swatch en direct
+  - [x] CRUD complet + picker d'apps en cours
 - [ ] B8 — Planification power (standby auto après idle)
 - [ ] B9 — Raccourcis globaux (hotkeys système)
 - [ ] B10 — Vérification de mise à jour (GitHub Releases API)
