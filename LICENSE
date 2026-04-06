@@ -1,0 +1,144 @@
+LUMINA CONTROL — END-USER LICENSE AGREEMENT (EULA)
+====================================================
+Copyright (c) 2024-2025 Nicolas Gougnot. All rights reserved.
+
+PLEASE READ THIS AGREEMENT CAREFULLY BEFORE INSTALLING OR USING LUMINA CONTROL
+("THE SOFTWARE"). BY INSTALLING, COPYING, OR OTHERWISE USING THE SOFTWARE, YOU
+AGREE TO BE BOUND BY THE TERMS OF THIS AGREEMENT. IF YOU DO NOT AGREE, DO NOT
+INSTALL OR USE THE SOFTWARE.
+
+
+1. GRANT OF LICENSE
+-------------------
+Subject to full payment of the applicable license fee, the copyright holder
+grants you a personal, non-exclusive, non-transferable, revocable license to:
+
+  (a) install and use one (1) copy of the Software on one (1) personal computer
+      that you own or control;
+  (b) make one (1) backup copy solely for archival purposes.
+
+A separate license must be purchased for each computer on which the Software
+is installed and used.
+
+
+2. RESTRICTIONS
+---------------
+You may NOT, and you may NOT permit any third party to:
+
+  (a) copy, redistribute, sublicense, sell, rent, lease, lend, or otherwise
+      transfer the Software or any portion thereof to any third party;
+  (b) reverse engineer, disassemble, decompile, or attempt to derive the source
+      code of the Software, except to the extent expressly permitted by
+      applicable law;
+  (c) modify, adapt, translate, or create derivative works based on the Software;
+  (d) remove, alter, or obscure any proprietary notices (including copyright,
+      trademark, and patent notices) on the Software;
+  (e) use the Software to develop a competing product or service;
+  (f) make the Software available over a network where it could be used by
+      multiple users simultaneously without a multi-seat license.
+
+
+3. OWNERSHIP
+------------
+The Software is licensed, not sold. The copyright holder retains all right,
+title, and interest in and to the Software, including all intellectual property
+rights therein. This Agreement does not grant you any rights to trademarks,
+service marks, or trade names of the copyright holder.
+
+
+4. UPDATES AND UPGRADES
+-----------------------
+If the copyright holder makes updates or upgrades to the Software available,
+they may be subject to additional or different terms. You have no entitlement
+to receive updates or upgrades unless expressly provided in a separate written
+agreement.
+
+
+5. TERM AND TERMINATION
+-----------------------
+This Agreement is effective until terminated. Your rights under this Agreement
+will terminate automatically and without notice if you fail to comply with any
+of its terms and conditions. Upon termination, you must immediately cease all
+use of the Software and destroy all copies in your possession or control.
+
+
+6. DISCLAIMER OF WARRANTIES
+----------------------------
+THE SOFTWARE IS PROVIDED "AS IS" WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED. TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, THE COPYRIGHT
+HOLDER EXPRESSLY DISCLAIMS ALL WARRANTIES, INCLUDING BUT NOT LIMITED TO THE
+IMPLIED WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, AND
+NON-INFRINGEMENT.
+
+THE COPYRIGHT HOLDER DOES NOT WARRANT THAT THE SOFTWARE WILL MEET YOUR
+REQUIREMENTS, THAT OPERATION WILL BE UNINTERRUPTED OR ERROR-FREE, OR THAT
+DEFECTS WILL BE CORRECTED.
+
+
+7. LIMITATION OF LIABILITY
+---------------------------
+TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, IN NO EVENT SHALL THE
+COPYRIGHT HOLDER BE LIABLE FOR ANY INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY,
+OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, LOSS OF DATA, LOSS
+OF PROFITS, BUSINESS INTERRUPTION, OR DAMAGE TO HARDWARE) ARISING OUT OF OR
+IN CONNECTION WITH THE USE OR INABILITY TO USE THE SOFTWARE, EVEN IF ADVISED
+OF THE POSSIBILITY OF SUCH DAMAGE.
+
+IN NO EVENT SHALL THE COPYRIGHT HOLDER'S TOTAL LIABILITY TO YOU FOR ALL
+DAMAGES EXCEED THE AMOUNT YOU PAID FOR THE SOFTWARE IN THE TWELVE (12) MONTHS
+PRECEDING THE CLAIM.
+
+
+8. THIRD-PARTY COMPONENTS
+--------------------------
+The Software may include open-source components governed by their own licenses.
+These components are listed below and their respective licenses are not affected
+by this Agreement:
+
+  - PySide6 / Qt          — LGPL v3  (https://www.qt.io/licensing/)
+  - monitorcontrol        — MIT      (https://github.com/newAM/monitorcontrol)
+  - screeninfo            — MIT      (https://github.com/rr-/screeninfo)
+  - pywin32               — PSF-2.0  (https://github.com/mhammond/pywin32)
+
+Your use of these components is governed solely by their respective licenses.
+
+
+9. GOVERNING LAW
+----------------
+This Agreement shall be governed by and construed in accordance with the laws
+of France, without regard to its conflict of law provisions. Any dispute
+arising under this Agreement shall be subject to the exclusive jurisdiction of
+the competent courts of France.
+
+
+10. ENTIRE AGREEMENT
+--------------------
+This Agreement constitutes the entire agreement between you and the copyright
+holder with respect to the Software and supersedes all prior or contemporaneous
+understandings, communications, or agreements, written or oral, regarding the
+Software.
+
+If any provision of this Agreement is held to be unenforceable, that provision
+shall be modified to the minimum extent necessary to make it enforceable, and
+the remaining provisions shall continue in full force and effect.
+
+
+──────────────────────────────────────────────────────────────────────────────
+
+CONTRAT DE LICENCE UTILISATEUR FINAL — RÉSUMÉ EN FRANÇAIS
+==========================================================
+
+Ce logiciel est protégé par le droit d'auteur. En l'installant, vous acceptez
+les conditions ci-dessus. En résumé :
+
+  ✔ Vous pouvez utiliser le logiciel sur UN ordinateur personnel.
+  ✔ Vous pouvez faire UNE copie de sauvegarde.
+
+  ✘ Vous ne pouvez pas redistribuer, revendre ou prêter le logiciel.
+  ✘ Vous ne pouvez pas désassembler, décompiler ou modifier le logiciel.
+  ✘ Vous ne pouvez pas l'utiliser pour créer un produit concurrent.
+
+Le logiciel est fourni "tel quel", sans garantie. La responsabilité de
+l'éditeur est limitée au montant payé pour la licence.
+
+Pour toute question : [votre adresse email de support]

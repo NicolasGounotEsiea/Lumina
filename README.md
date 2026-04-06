@@ -61,6 +61,8 @@ Lumina/
 │   ├── config.py                # Constantes couleur, chemins AppData
 │   ├── style.py                 # STYLESHEET Qt complet (dark theme)
 │   ├── i18n.py                  # Internationalisation — fonction _(), FR/EN
+│   ├── startup.py               # Démarrage Windows — registre HKCU Run (F6)
+│   ├── updater.py               # Vérif. GitHub Releases en arrière-plan (B10)
 │   ├── profiles.py              # ProfileManager — snapshots & settings JSON
 │   ├── utils.py                 # Gamma (gdi32), wake monitors, active/foreground screen
 │   ├── monitor_enumerate.py     # Énumération stable via EnumDisplayMonitors
@@ -137,7 +139,9 @@ Voir les [issues ouvertes](https://github.com/NicolasGounotEsiea/Lumina/issues) 
   - [x] CRUD complet + picker d'apps en cours
 - [ ] B8 — Planification power (standby auto après idle)
 - [ ] B9 — Raccourcis globaux (hotkeys système)
-- [ ] B10 — Vérification de mise à jour (GitHub Releases API)
+- [x] B10 — Vérification de mise à jour (GitHub Releases API)
+  - [x] Check non-bloquant au démarrage (QThread, délai 3 s)
+  - [x] Bannière discrète avec bouton "Télécharger" si nouvelle version détectée
 
 **Frontend (UX & confort)**
 
@@ -146,7 +150,9 @@ Voir les [issues ouvertes](https://github.com/NicolasGounotEsiea/Lumina/issues) 
 - [ ] F3 — Raccourcis clavier in-app
 - [ ] F4 — Infobulle tray avec luminosité courante
 - [ ] F5 — Notifications toast (save/restore confirmé)
-- [ ] F6 — Lancement au démarrage Windows (registre)
+- [x] F6 — Lancement au démarrage Windows (registre)
+  - [x] `lumina_control/startup.py` — lecture/écriture `HKCU\...\Run`
+  - [x] Checkbox dans la section PARAMÈTRES (pas d'admin requis)
 - [x] F7 — Internationalisation (i18n)
   - [x] Module `lumina_control/i18n.py` — fonction `_()`, détection de locale, FR/EN
   - [x] Toutes les chaînes UI traduites (tray, main_window, monitor_card, app_rules_dialog, calibration)
@@ -167,4 +173,6 @@ Voir les [issues ouvertes](https://github.com/NicolasGounotEsiea/Lumina/issues) 
 
 ## Licence
 
-MIT — voir [LICENSE](LICENSE) (à ajouter).
+Propriétaire — voir [LICENSE](LICENSE).
+Tous droits réservés © 2024-2025 Nicolas Gougnot.
+Usage personnel sur une machine par licence achetée. Redistribution et décompilation interdites.

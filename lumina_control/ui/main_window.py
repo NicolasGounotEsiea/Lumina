@@ -18,6 +18,8 @@ from lumina_control.config import (
 from lumina_control.i18n import _
 from lumina_control.profiles import ProfileManager
 from lumina_control.app_rules import AppRule, AppRuleManager
+from lumina_control import startup as _startup
+from lumina_control.updater import UpdateChecker
 from lumina_control.utils import (
     get_active_screen_index, get_foreground_process,
     get_foreground_window_monitor, wake_all_monitors,
@@ -131,6 +133,11 @@ class MainWindow(QWidget):
         self._poll_timer.timeout.connect(self._poll)
         self._poll_timer.start(500)
 
+        # Non-blocking update check (B10)
+        self._updater = UpdateChecker(self)
+        self._updater.update_available.connect(self._on_update_available)
+        QTimer.singleShot(3000, self._updater.start)   # delay 3 s after launch
+
     # ─────────────────────────────────────────────────────────────────────────
     # UI construction
     # ─────────────────────────────────────────────────────────────────────────
@@ -232,6 +239,12 @@ class MainWindow(QWidget):
         self.main_l.addWidget(self._sep())
         self._build_app_rules_section()
         self._build_tools_section()
+        self._build_settings_section()
+
+        # Update banner — hidden until a newer release is detected
+        self._update_banner = self._make_update_banner()
+        self.main_l.addWidget(self._update_banner)
+
         self.main_l.addStretch()
 
         btn_quit = QPushButton(_("Quitter l'application"))
@@ -516,6 +529,61 @@ class MainWindow(QWidget):
         h.addWidget(btn_wizard)
         self.main_l.addLayout(h)
 
+    def _build_settings_section(self) -> None:
+        sec = _CollapsibleSection(_("PARAMÈTRES"), expanded=False)
+
+        # F6 — Launch at Windows startup
+        self._chk_startup = QCheckBox(_("Lancer au démarrage de Windows"))
+        self._chk_startup.setChecked(_startup.is_enabled())
+        self._chk_startup.toggled.connect(
+            lambda v: _startup.set_enabled(v)
+        )
+        sec.add_widget(self._chk_startup)
+
+        self.main_l.addWidget(sec)
+
+    def _make_update_banner(self) -> QWidget:
+        """Create the update-available banner (hidden by default)."""
+        from PySide6.QtGui import QDesktopServices
+        from PySide6.QtCore import QUrl
+
+        banner = QWidget()
+        banner.setObjectName("UpdateBanner")
+        banner.setStyleSheet(
+            "QWidget#UpdateBanner{"
+            f"background:rgba(96,205,255,0.10);"
+            f"border:1px solid rgba(96,205,255,0.35);"
+            "border-radius:6px;}"
+        )
+        hl = QHBoxLayout(banner)
+        hl.setContentsMargins(10, 8, 10, 8)
+        hl.setSpacing(8)
+
+        self._lbl_update = QLabel("")
+        self._lbl_update.setStyleSheet(
+            f"font-size:11px; color:{ACCENT_COLOR}; font-weight:600;"
+        )
+        hl.addWidget(self._lbl_update, stretch=1)
+
+        btn_dl = QPushButton(_("Télécharger"))
+        btn_dl.setProperty("class", "pill")
+        btn_dl.setFixedHeight(26)
+        btn_dl.setCursor(Qt.PointingHandCursor)
+        btn_dl.clicked.connect(
+            lambda: QDesktopServices.openUrl(QUrl(self._updater.releases_url))
+        )
+        hl.addWidget(btn_dl)
+
+        banner.setVisible(False)
+        return banner
+
+    # ── B10 — Update available ────────────────────────────────────────────────
+
+    def _on_update_available(self, version: str) -> None:
+        self._lbl_update.setText(_("Mise à jour disponible : {}").format(version))
+        self._update_banner.setVisible(True)
+        self.adjustSize()
+
     # ── Helper widgets ────────────────────────────────────────────────────────
 
     def _section_label(self, text: str) -> QLabel:
@@ -593,6 +661,7 @@ class MainWindow(QWidget):
         while self.mon_l.count():
             w = self.mon_l.takeAt(0).widget()
             if w:
+                w.cleanup()
                 w.deleteLater()
         self.cards.clear()
 

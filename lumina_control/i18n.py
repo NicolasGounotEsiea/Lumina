@@ -117,6 +117,12 @@ _EN: dict[str, str] = {
     "App en focus :":                   "Focused app:",
     "Aucun processus détecté":          "No process detected",
 
+    # ── startup / updater ────────────────────────────────────────────────────
+    "PARAMÈTRES":                       "SETTINGS",
+    "Lancer au démarrage de Windows":   "Launch at Windows startup",
+    "Mise à jour disponible : {}":      "Update available: {}",
+    "Télécharger":                      "Download",
+
     # ── calibration ──────────────────────────────────────────────────────────
     "Calibrage RGB":                    "RGB Calibration",
     "Calibrage : {}":                   "Calibration: {}",
