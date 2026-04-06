@@ -8,6 +8,7 @@ from PySide6.QtWidgets import (
     QPushButton, QSlider, QVBoxLayout, QApplication,
 )
 
+from lumina_control.i18n import _
 from lumina_control.ui.patterns import PatternWindow
 
 log = logging.getLogger(__name__)
@@ -35,18 +36,18 @@ class CalibrationDialog(QDialog):
         self._labels: dict[int, QLabel] = {}
         self._loaded: dict[int, int] = {}
 
-        self.setWindowTitle("Calibrage RGB")
+        self.setWindowTitle(_("Calibrage RGB"))
         self.setFixedSize(360, 360)
         self.setWindowFlags(Qt.Dialog | Qt.WindowCloseButtonHint)
 
         layout = QVBoxLayout(self)
         layout.setSpacing(14)
 
-        title = QLabel(f"Calibrage : {monitor_name}")
+        title = QLabel(_("Calibrage : {}").format(monitor_name))
         title.setObjectName("Title")
         layout.addWidget(title)
 
-        info = QLabel("Ajustement fin des gains RGB (si supporté par l'écran).")
+        info = QLabel(_("Ajustement fin des gains RGB (si supporté par l'écran)."))
         info.setWordWrap(True)
         info.setStyleSheet("color: #4e5d78; font-size: 11px; font-style: italic;")
         layout.addWidget(info)
@@ -56,10 +57,10 @@ class CalibrationDialog(QDialog):
 
         # Link / reload toolbar
         tools = QHBoxLayout()
-        self.chk_link = QCheckBox("Lier R/G/B")
+        self.chk_link = QCheckBox(_("Lier R/G/B"))
         self.chk_link.setChecked(True)
         self.chk_link.toggled.connect(lambda v: setattr(self, "sync_rgb", v))
-        btn_reload = QPushButton("Recharger")
+        btn_reload = QPushButton(_("Recharger"))
         btn_reload.setProperty("class", "pill-muted")
         btn_reload.clicked.connect(self._reload_all)
         tools.addWidget(self.chk_link)
@@ -91,7 +92,7 @@ class CalibrationDialog(QDialog):
 
         # Global gain slider
         gain_row = QHBoxLayout()
-        lbl_gain = QLabel("Gain global")
+        lbl_gain = QLabel(_("Gain global"))
         lbl_gain.setObjectName("Subtle")
         self.sl_gain = QSlider(Qt.Horizontal)
         self.sl_gain.setRange(0, 100)
@@ -107,7 +108,7 @@ class CalibrationDialog(QDialog):
         layout.addLayout(gain_row)
 
         layout.addStretch()
-        btn_ok = QPushButton("Fermer")
+        btn_ok = QPushButton(_("Fermer"))
         btn_ok.setProperty("class", "pill")
         btn_ok.clicked.connect(self.accept)
         layout.addWidget(btn_ok)
@@ -196,10 +197,11 @@ class CalibrationWizard(QDialog):
         {"title": "Sharpness",           "pattern": "sharpness",
          "help": "Vérifier la netteté et la sur-accentuation."},
     ]
+    # Note: titles and help texts are translated at runtime via _() in _update_ui()
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
-        self.setWindowTitle("Calibrage guidé")
+        self.setWindowTitle(_("Calibrage guidé"))
         self.setFixedSize(420, 340)
         self.setWindowFlags(Qt.Dialog | Qt.WindowCloseButtonHint)
         self.step_index = 0
@@ -212,7 +214,7 @@ class CalibrationWizard(QDialog):
         layout = QVBoxLayout(self)
         layout.setSpacing(12)
 
-        title = QLabel("Calibrage guidé")
+        title = QLabel(_("Calibrage guidé"))
         title.setObjectName("Title")
         layout.addWidget(title)
 
@@ -233,7 +235,7 @@ class CalibrationWizard(QDialog):
         layout.addWidget(self.lbl_help)
 
         row_screen = QHBoxLayout()
-        lbl_screen = QLabel("Écran cible")
+        lbl_screen = QLabel(_("Écran cible"))
         lbl_screen.setObjectName("Subtle")
         self.cmb_screen = QComboBox()
         self.cmb_screen.setFixedWidth(160)
@@ -242,17 +244,17 @@ class CalibrationWizard(QDialog):
         row_screen.addStretch()
         layout.addLayout(row_screen)
 
-        btn_show = QPushButton("Afficher le pattern")
+        btn_show = QPushButton(_("Afficher le pattern"))
         btn_show.setProperty("class", "pill")
         btn_show.clicked.connect(self._show_pattern)
         layout.addWidget(btn_show)
         self.btn_show = btn_show
 
         row_nav = QHBoxLayout()
-        self.btn_prev = QPushButton("Précédent")
+        self.btn_prev = QPushButton(_("Précédent"))
         self.btn_prev.setProperty("class", "pill-muted")
         self.btn_prev.clicked.connect(self._prev_step)
-        self.btn_next = QPushButton("Suivant")
+        self.btn_next = QPushButton(_("Suivant"))
         self.btn_next.setProperty("class", "pill")
         self.btn_next.clicked.connect(self._next_step)
         row_nav.addWidget(self.btn_prev)
@@ -260,7 +262,7 @@ class CalibrationWizard(QDialog):
         layout.addLayout(row_nav)
 
         layout.addStretch()
-        btn_close = QPushButton("Fermer")
+        btn_close = QPushButton(_("Fermer"))
         btn_close.setProperty("class", "pill-muted")
         btn_close.clicked.connect(self.accept)
         layout.addWidget(btn_close)
@@ -269,15 +271,15 @@ class CalibrationWizard(QDialog):
         self.cmb_screen.blockSignals(True)
         self.cmb_screen.clear()
         for i, s in enumerate(QApplication.screens()):
-            self.cmb_screen.addItem(f"Écran {i + 1}", i)
+            self.cmb_screen.addItem(_("Écran {}").format(i + 1), i)
         self.cmb_screen.blockSignals(False)
         self.btn_show.setEnabled(bool(QApplication.screens()))
 
     def _update_ui(self) -> None:
         step = self.STEPS[self.step_index]
-        self.lbl_step.setText(f"Étape {self.step_index + 1} / {len(self.STEPS)}")
-        self.lbl_title.setText(step["title"])
-        self.lbl_help.setText(step["help"])
+        self.lbl_step.setText(_("Étape {} / {}").format(self.step_index + 1, len(self.STEPS)))
+        self.lbl_title.setText(_(step["title"]))
+        self.lbl_help.setText(_(step["help"]))
         self.btn_prev.setEnabled(self.step_index > 0)
         self.btn_next.setEnabled(self.step_index < len(self.STEPS) - 1)
 

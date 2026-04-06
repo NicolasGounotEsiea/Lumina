@@ -15,6 +15,8 @@
 | **Profils par app** | Règles automatiques déclenchées par l'application en focus (500 ms) — luminosité, contraste, gamma, gains RVB ; s'applique uniquement sur l'écran contenant la fenêtre |
 | **Colorimétrie** | Gains R/V/B DDC-CI par règle d'application, avec aperçu swatch en direct |
 | **Calibrage** | Dialog RGB par écran + assistant guidé en 6 étapes avec patterns plein écran |
+| **Gamma par écran** | Slider gamma GPU indépendant dans chaque card (GDI32 `SetDeviceGammaRamp`) |
+| **i18n** | Détection automatique FR/EN depuis la locale système (`lumina_control/i18n.py`) |
 | **Snapshots** | Sauvegarde / restauration de profils dans `%APPDATA%\LuminaControl` |
 | **Instance unique** | Guard via `QLocalServer` — relance = réafficher la fenêtre |
 | **Build** | PyInstaller + Inno Setup → installeur Windows autonome |
@@ -58,6 +60,7 @@ Lumina/
 │   ├── __main__.py              # Entrée principale, guard single-instance
 │   ├── config.py                # Constantes couleur, chemins AppData
 │   ├── style.py                 # STYLESHEET Qt complet (dark theme)
+│   ├── i18n.py                  # Internationalisation — fonction _(), FR/EN
 │   ├── profiles.py              # ProfileManager — snapshots & settings JSON
 │   ├── utils.py                 # Gamma (gdi32), wake monitors, active/foreground screen
 │   ├── monitor_enumerate.py     # Énumération stable via EnumDisplayMonitors
@@ -144,8 +147,13 @@ Voir les [issues ouvertes](https://github.com/NicolasGounotEsiea/Lumina/issues) 
 - [ ] F4 — Infobulle tray avec luminosité courante
 - [ ] F5 — Notifications toast (save/restore confirmé)
 - [ ] F6 — Lancement au démarrage Windows (registre)
-- [ ] F7 — Internationalisation (i18n)
-- [ ] F8 — Courbes gamma par écran indépendantes
+- [x] F7 — Internationalisation (i18n)
+  - [x] Module `lumina_control/i18n.py` — fonction `_()`, détection de locale, FR/EN
+  - [x] Toutes les chaînes UI traduites (tray, main_window, monitor_card, app_rules_dialog, calibration)
+- [x] F8 — Courbes gamma par écran indépendantes
+  - [x] Slider gamma dans chaque `MonitorCard` (GPU, indépendant DDC-CI)
+  - [x] Persistance par écran dans `settings.json` (`gamma_values`)
+  - [x] Slider global GAMMA GPU = raccourci « appliquer à tous »
 
 ---
 

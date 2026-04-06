@@ -15,11 +15,12 @@ from lumina_control.config import (
     BORDER_COLOR, WARM_COLOR,
     get_profile_path, get_rules_path, get_settings_path,
 )
+from lumina_control.i18n import _
 from lumina_control.profiles import ProfileManager
 from lumina_control.app_rules import AppRule, AppRuleManager
 from lumina_control.utils import (
     get_active_screen_index, get_foreground_process,
-    get_foreground_window_monitor, set_device_gamma, set_gamma_all, wake_all_monitors,
+    get_foreground_window_monitor, wake_all_monitors,
 )
 from lumina_control.monitor_enumerate import enumerate_monitors
 from lumina_control.ui.monitor_card import MonitorCard
@@ -93,6 +94,7 @@ class MainWindow(QWidget):
         self.sync_offset_bri       = s["sync_offset_bri"]
         self.sync_offset_con       = s["sync_offset_con"]
         self.gamma_value           = s["gamma_value"]
+        self.gamma_values:  dict   = s["gamma_values"]
         self.focus_enabled         = s["focus_enabled"]
         self.focus_dim             = s["focus_dim"]
         self.app_rules_enabled     = s["app_rules_enabled"]
@@ -167,14 +169,14 @@ class MainWindow(QWidget):
         btn_refresh.setProperty("class", "icon-btn")
         btn_refresh.setFixedSize(28, 28)
         btn_refresh.setCursor(Qt.PointingHandCursor)
-        btn_refresh.setToolTip("Rafraîchir les écrans")
+        btn_refresh.setToolTip(_("Rafraîchir les écrans"))
         btn_refresh.clicked.connect(self.refresh)
 
         btn_close = QPushButton("✕")
         btn_close.setObjectName("CloseWinBtn")
         btn_close.setFixedSize(28, 28)
         btn_close.setCursor(Qt.PointingHandCursor)
-        btn_close.setToolTip("Masquer")
+        btn_close.setToolTip(_("Masquer"))
         btn_close.clicked.connect(self.hide)
 
         header_l.addWidget(icon_lbl)
@@ -212,7 +214,7 @@ class MainWindow(QWidget):
 
         # Monitor cards (primary content)
         screens_hdr = QHBoxLayout()
-        screens_hdr.addWidget(self._section_label("ÉCRANS"))
+        screens_hdr.addWidget(self._section_label(_("ÉCRANS")))
         screens_hdr.addStretch()
         self.main_l.addLayout(screens_hdr)
         self.mon_l = QVBoxLayout()
@@ -232,7 +234,7 @@ class MainWindow(QWidget):
         self._build_tools_section()
         self.main_l.addStretch()
 
-        btn_quit = QPushButton("Quitter l'application")
+        btn_quit = QPushButton(_("Quitter l'application"))
         btn_quit.setObjectName("QuitBtn")
         btn_quit.setCursor(Qt.PointingHandCursor)
         btn_quit.clicked.connect(QApplication.quit)
@@ -249,7 +251,7 @@ class MainWindow(QWidget):
         sl.setSpacing(8)
 
         h = QHBoxLayout()
-        lbl = QLabel("Luminosité globale")
+        lbl = QLabel(_("Luminosité globale"))
         lbl.setObjectName("Subtle")
         self.lbl_glob_val = QLabel("50%")
         self.lbl_glob_val.setObjectName("ValueBadge")
@@ -271,7 +273,7 @@ class MainWindow(QWidget):
         # Preset pills
         h_pre = QHBoxLayout()
         h_pre.setSpacing(6)
-        btn_day = QPushButton("☀  Jour  80%")
+        btn_day = QPushButton(_("☀  Jour  80%"))
         btn_day.setProperty("class", "pill")
         btn_day.setStyleSheet(
             f"color:{WARM_COLOR}; border-color:rgba(252,185,0,0.35);"
@@ -279,7 +281,7 @@ class MainWindow(QWidget):
         )
         btn_day.setCursor(Qt.PointingHandCursor)
         btn_day.clicked.connect(partial(self._set_glob, 80))
-        btn_night = QPushButton("☾  Nuit  25%")
+        btn_night = QPushButton(_("☾  Nuit  25%"))
         btn_night.setProperty("class", "pill")
         btn_night.setCursor(Qt.PointingHandCursor)
         btn_night.clicked.connect(partial(self._set_glob, 25))
@@ -291,9 +293,9 @@ class MainWindow(QWidget):
         h_pow = QHBoxLayout()
         h_pow.setSpacing(6)
         for label, slot, cls in [
-            ("⏻  Allumer",   partial(self._set_all_power, True),  "pill"),
-            ("⭘  Éteindre",  partial(self._set_all_power, False), "pill-muted"),
-            ("⏵  Réveiller", wake_all_monitors,                   "pill-muted"),
+            (_("⏻  Allumer"),   partial(self._set_all_power, True),  "pill"),
+            (_("⭘  Éteindre"),  partial(self._set_all_power, False), "pill-muted"),
+            (_("⏵  Réveiller"), wake_all_monitors,                   "pill-muted"),
         ]:
             btn = QPushButton(label)
             btn.setProperty("class", cls)
@@ -303,12 +305,12 @@ class MainWindow(QWidget):
         self.main_l.addLayout(h_pow)
 
     def _build_sync_section(self) -> None:
-        sec = _CollapsibleSection("SYNCHRONISATION", expanded=False)
+        sec = _CollapsibleSection(_("SYNCHRONISATION"), expanded=False)
 
         h_sync = QHBoxLayout()
-        self.chk_sync = QCheckBox("Synchroniser les écrans")
+        self.chk_sync = QCheckBox(_("Synchroniser les écrans"))
         self.chk_sync.toggled.connect(self._set_sync_enabled)
-        lbl_master = QLabel("Maître")
+        lbl_master = QLabel(_("Maître"))
         lbl_master.setObjectName("Subtle")
         self.cmb_master = QComboBox()
         self.cmb_master.setFixedWidth(120)
@@ -320,9 +322,9 @@ class MainWindow(QWidget):
         sec.add_layout(h_sync)
 
         h2 = QHBoxLayout()
-        self.chk_sync_rgb = QCheckBox("Gains RGB")
+        self.chk_sync_rgb = QCheckBox(_("Gains RGB"))
         self.chk_sync_rgb.toggled.connect(self._set_sync_rgb_enabled)
-        self.btn_sync_now = QPushButton("Sync maintenant")
+        self.btn_sync_now = QPushButton(_("Sync maintenant"))
         self.btn_sync_now.setProperty("class", "pill-muted")
         self.btn_sync_now.setCursor(Qt.PointingHandCursor)
         self.btn_sync_now.clicked.connect(self.sync_now)
@@ -332,16 +334,16 @@ class MainWindow(QWidget):
         sec.add_layout(h2)
 
         h3 = QHBoxLayout()
-        self.chk_sync_relative = QCheckBox("Décalages relatifs")
+        self.chk_sync_relative = QCheckBox(_("Décalages relatifs"))
         self.chk_sync_relative.toggled.connect(self._set_sync_relative_enabled)
         h3.addWidget(self.chk_sync_relative)
         h3.addStretch()
         sec.add_layout(h3)
 
         for attr, label, lo, hi, lbl_attr, slot_fn in [
-            ("sl_sync_bri", "Offset lum.", -40, 40,
+            ("sl_sync_bri", _("Offset lum."), -40, 40,
              "lbl_sync_bri_val", self._update_sync_bri_label),
-            ("sl_sync_con", "Offset con.", -40, 40,
+            ("sl_sync_con", _("Offset con."), -40, 40,
              "lbl_sync_con_val", self._update_sync_con_label),
         ]:
             row = QHBoxLayout()
@@ -367,10 +369,10 @@ class MainWindow(QWidget):
         self.main_l.addWidget(sec)
 
     def _build_gamma_section(self) -> None:
-        sec = _CollapsibleSection("GAMMA GPU", expanded=False)
+        sec = _CollapsibleSection(_("GAMMA GPU"), expanded=False)
 
         row = QHBoxLayout()
-        lbl = QLabel("Gamma")
+        lbl = QLabel(_("Gamma"))
         lbl.setObjectName("Subtle")
         lbl.setFixedWidth(60)
         self.sl_gamma = QSlider(Qt.Horizontal)
@@ -389,15 +391,15 @@ class MainWindow(QWidget):
 
         h_btn = QHBoxLayout()
         h_btn.setSpacing(6)
-        self.btn_gamma_import = QPushButton("Importer")
+        self.btn_gamma_import = QPushButton(_("Importer"))
         self.btn_gamma_import.setProperty("class", "pill-muted")
         self.btn_gamma_import.setCursor(Qt.PointingHandCursor)
         self.btn_gamma_import.clicked.connect(self._import_gamma)
-        self.btn_gamma_export = QPushButton("Exporter")
+        self.btn_gamma_export = QPushButton(_("Exporter"))
         self.btn_gamma_export.setProperty("class", "pill-muted")
         self.btn_gamma_export.setCursor(Qt.PointingHandCursor)
         self.btn_gamma_export.clicked.connect(self._export_gamma)
-        btn_reset = QPushButton("Reset")
+        btn_reset = QPushButton(_("Reset"))
         btn_reset.setProperty("class", "pill-muted")
         btn_reset.setCursor(Qt.PointingHandCursor)
         btn_reset.clicked.connect(self.reset_gamma)
@@ -410,12 +412,12 @@ class MainWindow(QWidget):
         self.main_l.addWidget(sec)
 
     def _build_focus_section(self) -> None:
-        sec = _CollapsibleSection("MODE FOCUS", expanded=False)
+        sec = _CollapsibleSection(_("MODE FOCUS"), expanded=False)
 
         h = QHBoxLayout()
-        lbl_help = QLabel("Écran actif lumineux, autres atténués.")
+        lbl_help = QLabel(_("Écran actif lumineux, autres atténués."))
         lbl_help.setObjectName("Subtle")
-        self.btn_focus = QPushButton("Désactivé")
+        self.btn_focus = QPushButton(_("Désactivé"))
         self.btn_focus.setObjectName("FocusToggle")
         self.btn_focus.setCheckable(True)
         self.btn_focus.setCursor(Qt.PointingHandCursor)
@@ -426,7 +428,7 @@ class MainWindow(QWidget):
         sec.add_layout(h)
 
         row = QHBoxLayout()
-        lbl_dim = QLabel("Atténuation")
+        lbl_dim = QLabel(_("Atténuation"))
         lbl_dim.setObjectName("Subtle")
         lbl_dim.setFixedWidth(76)
         self.sl_focus_dim = QSlider(Qt.Horizontal)
@@ -446,19 +448,19 @@ class MainWindow(QWidget):
         self.main_l.addWidget(sec)
 
     def _build_snapshot_section(self) -> None:
-        sec = _CollapsibleSection("INSTANTANÉ", expanded=True)
+        sec = _CollapsibleSection(_("INSTANTANÉ"), expanded=True)
 
         h = QHBoxLayout()
         h.setSpacing(6)
-        btn_save = QPushButton("Sauver")
+        btn_save = QPushButton(_("Sauver"))
         btn_save.setProperty("class", "pill")
         btn_save.setCursor(Qt.PointingHandCursor)
         btn_save.clicked.connect(self.save_snapshot)
-        btn_restore = QPushButton("Restaurer")
+        btn_restore = QPushButton(_("Restaurer"))
         btn_restore.setProperty("class", "pill-muted")
         btn_restore.setCursor(Qt.PointingHandCursor)
         btn_restore.clicked.connect(self.restore_snapshot)
-        self.lbl_snapshot = QLabel("Aucun instantané")
+        self.lbl_snapshot = QLabel(_("Aucun instantané"))
         self.lbl_snapshot.setObjectName("Subtle")
         h.addWidget(btn_save)
         h.addWidget(btn_restore)
@@ -469,18 +471,18 @@ class MainWindow(QWidget):
         self.main_l.addWidget(sec)
 
     def _build_app_rules_section(self) -> None:
-        sec = _CollapsibleSection("PROFILS AUTOMATIQUES", expanded=False)
+        sec = _CollapsibleSection(_("PROFILS AUTOMATIQUES"), expanded=False)
 
         # Toggle + status
         h_top = QHBoxLayout()
-        self._chk_app_rules = QCheckBox("Activer les profils par application")
+        self._chk_app_rules = QCheckBox(_("Activer les profils par application"))
         self._chk_app_rules.setChecked(self.app_rules_enabled)
         self._chk_app_rules.toggled.connect(self._set_app_rules_enabled)
         h_top.addWidget(self._chk_app_rules, stretch=1)
         sec.add_layout(h_top)
 
         # Active rule status indicator
-        self._lbl_rule_status = QLabel("Aucune règle active")
+        self._lbl_rule_status = QLabel(_("Aucune règle active"))
         self._lbl_rule_status.setStyleSheet("font-size:11px; color:#606060;")
         sec.add_widget(self._lbl_rule_status)
 
@@ -490,7 +492,7 @@ class MainWindow(QWidget):
         sec.add_widget(self._lbl_proc_detect)
 
         # Manage button
-        btn_manage = QPushButton("Gérer les règles…")
+        btn_manage = QPushButton(_("Gérer les règles…"))
         btn_manage.setProperty("class", "pill-muted")
         btn_manage.setCursor(Qt.PointingHandCursor)
         btn_manage.clicked.connect(self._open_app_rules_dialog)
@@ -499,14 +501,14 @@ class MainWindow(QWidget):
         self.main_l.addWidget(sec)
 
     def _build_tools_section(self) -> None:
-        self.main_l.addWidget(self._section_label("OUTILS"))
+        self.main_l.addWidget(self._section_label(_("OUTILS")))
         h = QHBoxLayout()
         h.setSpacing(6)
-        btn_patterns = QPushButton("Patterns plein écran")
+        btn_patterns = QPushButton(_("Patterns plein écran"))
         btn_patterns.setProperty("class", "pill")
         btn_patterns.setCursor(Qt.PointingHandCursor)
         btn_patterns.clicked.connect(self.show_patterns)
-        btn_wizard = QPushButton("Calibrage guidé")
+        btn_wizard = QPushButton(_("Calibrage guidé"))
         btn_wizard.setProperty("class", "pill-muted")
         btn_wizard.setCursor(Qt.PointingHandCursor)
         btn_wizard.clicked.connect(self.show_calibration_wizard)
@@ -561,7 +563,7 @@ class MainWindow(QWidget):
         if self.focus_enabled:
             self.btn_focus.blockSignals(True)
             self.btn_focus.setChecked(True)
-            self.btn_focus.setText("Activé")
+            self.btn_focus.setText(_("Activé"))
             self.btn_focus.blockSignals(False)
 
     def save_settings(self) -> None:
@@ -575,6 +577,7 @@ class MainWindow(QWidget):
             "sync_offset_bri":       self.sync_offset_bri,
             "sync_offset_con":       self.sync_offset_con,
             "gamma_value":           self.gamma_value,
+            "gamma_values":          {c.device_name: c.gamma_value for c in self.cards},
             "focus_enabled":         self.focus_enabled,
             "focus_dim":             self.focus_dim,
             "app_rules_enabled":     self.app_rules_enabled,
@@ -604,7 +607,12 @@ class MainWindow(QWidget):
                 self.cards.append(card)
         except Exception as e:
             log.warning("Monitor scan failed: %s", e)
-            self.mon_l.addWidget(QLabel("Erreur lors du scan des écrans"))
+            self.mon_l.addWidget(QLabel(_("Erreur lors du scan des écrans")))
+
+        # Apply saved per-monitor gamma values
+        for c in self.cards:
+            if c.device_name in self.gamma_values:
+                c.set_gamma_value(float(self.gamma_values[c.device_name]))
 
         self.adjustSize()
         self._refresh_sync_combo()
@@ -636,7 +644,7 @@ class MainWindow(QWidget):
             if proc:
                 has_rule = any(r.enabled and r.process.lower() == proc for r in self._rules)
                 color = ACCENT_COLOR if has_rule else "#505050"
-                self._lbl_proc_detect.setText(f"Détecté : {proc}")
+                self._lbl_proc_detect.setText(_("Détecté : {}").format(proc))
                 self._lbl_proc_detect.setStyleSheet(f"font-size:10px; color:{color};")
             else:
                 self._lbl_proc_detect.setText("")
@@ -686,7 +694,7 @@ class MainWindow(QWidget):
             self._pre_rule_bri = {c.device_name: c.sl_bri.value() for c in target}
             self._pre_rule_con = {c.device_name: c.sl_con.value() for c in target}
             if matched.gamma is not None:
-                self._pre_rule_gamma = {c.device_name: self.gamma_value for c in target}
+                self._pre_rule_gamma = {c.device_name: c.gamma_value for c in target}
             if matched.red is not None or matched.green is not None or matched.blue is not None:
                 for c in target:
                     rgb = c.read_rgb()
@@ -711,17 +719,9 @@ class MainWindow(QWidget):
             c.apply_rule_values(rule.brightness, rule.contrast)
             c.apply_rule_rgb(rule.red, rule.green, rule.blue)
         if rule.gamma is not None:
-            if device:
-                set_device_gamma(device, rule.gamma)
-            else:
-                set_gamma_all(rule.gamma)
-            # Update the gamma slider to reflect the change on the target monitor
-            if hasattr(self, "sl_gamma"):
-                self.sl_gamma.blockSignals(True)
-                self.sl_gamma.setValue(int(round(rule.gamma * 100)))
-                self.sl_gamma.blockSignals(False)
-            if hasattr(self, "lbl_gamma_val"):
-                self.lbl_gamma_val.setText(f"{rule.gamma:.2f}")
+            for c in self.cards:
+                if c.isEnabled() and (not device or c.device_name == device):
+                    c.set_gamma_value(rule.gamma)
 
     def _restore_pre_rule(self) -> None:
         if not self._pre_rule_bri:
@@ -733,15 +733,9 @@ class MainWindow(QWidget):
                 if bri is not None or con is not None:
                     c.apply_rule_values(bri, con)
         for device, gamma in self._pre_rule_gamma.items():
-            set_device_gamma(device, gamma)
-            # Sync slider only if this is the active monitor device
-            if device == self._active_rule_device:
-                if hasattr(self, "sl_gamma"):
-                    self.sl_gamma.blockSignals(True)
-                    self.sl_gamma.setValue(int(round(gamma * 100)))
-                    self.sl_gamma.blockSignals(False)
-                if hasattr(self, "lbl_gamma_val"):
-                    self.lbl_gamma_val.setText(f"{gamma:.2f}")
+            for c in self.cards:
+                if c.device_name == device and c.isEnabled():
+                    c.set_gamma_value(gamma)
         for device, rgb in self._pre_rule_rgb.items():
             for c in self.cards:
                 if c.device_name == device and c.isEnabled():
@@ -757,12 +751,12 @@ class MainWindow(QWidget):
         if not hasattr(self, "_lbl_rule_status"):
             return
         if rule:
-            self._lbl_rule_status.setText(f"● {rule.label}")
+            self._lbl_rule_status.setText(_("● {}").format(rule.label))
             self._lbl_rule_status.setStyleSheet(
                 f"font-size:11px; color:{ACCENT_COLOR}; font-weight:600;"
             )
         else:
-            self._lbl_rule_status.setText("Aucune règle active")
+            self._lbl_rule_status.setText(_("Aucune règle active"))
             self._lbl_rule_status.setStyleSheet(
                 "font-size:11px; color:#606060;"
             )
@@ -828,9 +822,9 @@ class MainWindow(QWidget):
     def _refresh_snapshot_label(self) -> None:
         snap = self._profile.load_snapshot()
         if snap and snap.get("saved_at"):
-            self.lbl_snapshot.setText(f"Dernier : {snap['saved_at']}")
+            self.lbl_snapshot.setText(_("Dernier : {}").format(snap["saved_at"]))
         else:
-            self.lbl_snapshot.setText("Aucun instantané")
+            self.lbl_snapshot.setText(_("Aucun instantané"))
 
     def save_snapshot(self) -> None:
         monitors = [
@@ -843,12 +837,12 @@ class MainWindow(QWidget):
             for c in self.cards if c.isEnabled()
         ]
         saved_at = self._profile.save_snapshot(monitors)
-        self.lbl_snapshot.setText(f"Dernier : {saved_at}")
+        self.lbl_snapshot.setText(_("Dernier : {}").format(saved_at))
 
     def restore_snapshot(self) -> None:
         snap = self._profile.load_snapshot()
         if not snap or not snap.get("monitors"):
-            self.lbl_snapshot.setText("Instantané introuvable")
+            self.lbl_snapshot.setText(_("Instantané introuvable"))
             return
         # Prefer matching by device_name; fall back to index for old snapshots.
         card_by_device = {c.device_name: c for c in self.cards}
@@ -864,7 +858,7 @@ class MainWindow(QWidget):
                     card.sl_con.setValue(int(item["contrast"]))
         self._sync_guard = False
         if snap.get("saved_at"):
-            self.lbl_snapshot.setText(f"Dernier : {snap['saved_at']}")
+            self.lbl_snapshot.setText(_("Dernier : {}").format(snap["saved_at"]))
 
     # ─────────────────────────────────────────────────────────────────────────
     # Sync
@@ -1022,12 +1016,14 @@ class MainWindow(QWidget):
         self.lbl_gamma_val.setText(f"{g:.2f}")
 
     def _apply_gamma(self) -> None:
-        set_gamma_all(self.gamma_value)
+        for c in self.cards:
+            c.set_gamma_value(self.gamma_value)
 
     def reset_gamma(self) -> None:
         self.sl_gamma.setValue(100)
         self.gamma_value = 1.0
-        set_gamma_all(1.0)
+        for c in self.cards:
+            c.set_gamma_value(1.0)
 
     def _export_gamma(self) -> None:
         from datetime import datetime
@@ -1060,7 +1056,8 @@ class MainWindow(QWidget):
             return
         self.gamma_value = gamma
         self.sl_gamma.setValue(int(round(gamma * 100)))
-        set_gamma_all(gamma)
+        for c in self.cards:
+            c.set_gamma_value(gamma)
 
     # ─────────────────────────────────────────────────────────────────────────
     # Focus mode
@@ -1084,7 +1081,7 @@ class MainWindow(QWidget):
             self.btn_focus.blockSignals(False)
         if self.focus_action and source != "menu":
             self.focus_action.setChecked(enabled)
-        self.btn_focus.setText("Activé" if enabled else "Désactivé")
+        self.btn_focus.setText(_("Activé") if enabled else _("Désactivé"))
         if enabled:
             self.pre_focus_values = {
                 c.index: c.sl_bri.value() for c in self.cards if c.isEnabled()

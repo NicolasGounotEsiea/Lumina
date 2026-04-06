@@ -15,6 +15,7 @@ from lumina_control.config import (
     ACCENT_COLOR, BORDER_ACCENT, BORDER_COLOR,
     CARD_COLOR, TEXT_COLOR, TEXT_MUTED,
 )
+from lumina_control.i18n import _
 
 log = logging.getLogger(__name__)
 
@@ -44,7 +45,7 @@ class _RuleRow(QFrame):
         # ── Enable toggle ──────────────────────────────────────────────────
         self._chk = QCheckBox()
         self._chk.setChecked(rule.enabled)
-        self._chk.setToolTip("Activer / désactiver")
+        self._chk.setToolTip(_("Activer / désactiver"))
         h.addWidget(self._chk)
 
         # ── Info block ─────────────────────────────────────────────────────
@@ -83,7 +84,7 @@ class _RuleRow(QFrame):
         btn_edit.setProperty("class", "icon-btn")
         btn_edit.setFixedSize(28, 28)
         btn_edit.setCursor(Qt.PointingHandCursor)
-        btn_edit.setToolTip("Modifier")
+        btn_edit.setToolTip(_("Modifier"))
         btn_edit.clicked.connect(lambda: self.edit_requested.emit(self._index))
         h.addWidget(btn_edit)
 
@@ -92,7 +93,7 @@ class _RuleRow(QFrame):
         btn_del.setProperty("danger", "true")
         btn_del.setFixedSize(28, 28)
         btn_del.setCursor(Qt.PointingHandCursor)
-        btn_del.setToolTip("Supprimer")
+        btn_del.setToolTip(_("Supprimer"))
         btn_del.clicked.connect(lambda: self.delete_requested.emit(self._index))
         h.addWidget(btn_del)
 
@@ -122,7 +123,7 @@ class _RuleFormDialog(QDialog):
     def __init__(self, rule: AppRule | None = None, parent=None) -> None:
         super().__init__(parent)
         is_edit = rule is not None
-        self.setWindowTitle("Modifier la règle" if is_edit else "Nouvelle règle")
+        self.setWindowTitle(_("Modifier la règle") if is_edit else _("Nouvelle règle"))
         self.setMinimumWidth(460)
         self.setWindowFlags(Qt.Dialog | Qt.WindowCloseButtonHint)
         # DO NOT set a stylesheet here — inherit from the app global stylesheet
@@ -140,14 +141,14 @@ class _RuleFormDialog(QDialog):
         if current_proc:
             row_cur = QHBoxLayout()
             row_cur.setSpacing(6)
-            lbl_cur_prefix = QLabel("Actif maintenant :")
+            lbl_cur_prefix = QLabel(_("Actif maintenant :"))
             lbl_cur_prefix.setStyleSheet(f"font-size:11px; color:{TEXT_MUTED};")
             lbl_cur = QLabel(current_proc)
             lbl_cur.setStyleSheet(
                 f"font-size:11px; color:{ACCENT_COLOR}; font-weight:600;"
                 f" background:rgba(96,205,255,0.10); border-radius:4px; padding:2px 6px;"
             )
-            btn_use = QPushButton("Utiliser")
+            btn_use = QPushButton(_("Utiliser"))
             btn_use.setProperty("class", "pill")
             btn_use.setFixedHeight(24)
             btn_use.setCursor(Qt.PointingHandCursor)
@@ -162,34 +163,34 @@ class _RuleFormDialog(QDialog):
             layout.addLayout(row_cur)
 
         # ── Application picker ─────────────────────────────────────────────
-        layout.addWidget(self._muted_label("Applications en cours d'exécution"))
+        layout.addWidget(self._muted_label(_("Applications en cours d'exécution")))
 
         row_pick = QHBoxLayout()
         row_pick.setSpacing(6)
         self._cmb_apps = QComboBox()
-        self._cmb_apps.addItem("— choisir une app —", None)
+        self._cmb_apps.addItem(_("— choisir une app —"), None)
         self._cmb_apps.currentIndexChanged.connect(self._on_app_selected)
         row_pick.addWidget(self._cmb_apps, stretch=1)
 
         btn_refresh = QPushButton("↻")
         btn_refresh.setProperty("class", "icon-btn")
         btn_refresh.setFixedSize(30, 30)
-        btn_refresh.setToolTip("Actualiser la liste des applications")
+        btn_refresh.setToolTip(_("Actualiser la liste des applications"))
         btn_refresh.setCursor(Qt.PointingHandCursor)
         btn_refresh.clicked.connect(self._refresh_apps)
         row_pick.addWidget(btn_refresh)
         layout.addLayout(row_pick)
 
         # ── Manual exe entry ───────────────────────────────────────────────
-        layout.addWidget(self._muted_label("Nom de l'exécutable (ex: vlc.exe)"))
+        layout.addWidget(self._muted_label(_("Nom de l'exécutable (ex: vlc.exe)")))
         self._inp_proc = QLineEdit(rule.process if rule else "")
-        self._inp_proc.setPlaceholderText("ex. vlc.exe")
+        self._inp_proc.setPlaceholderText(_("ex. vlc.exe"))
         layout.addWidget(self._inp_proc)
 
         # ── Display label ──────────────────────────────────────────────────
-        layout.addWidget(self._muted_label("Nom affiché"))
+        layout.addWidget(self._muted_label(_("Nom affiché")))
         self._inp_label = QLineEdit(rule.label if rule else "")
-        self._inp_label.setPlaceholderText("ex. VLC, Zoom, Photoshop…")
+        self._inp_label.setPlaceholderText(_("ex. VLC, Zoom, Photoshop…"))
         layout.addWidget(self._inp_label)
 
         sep = self._make_sep()
@@ -198,21 +199,21 @@ class _RuleFormDialog(QDialog):
         # ── Brightness ────────────────────────────────────────────────────
         bri_val = rule.brightness if (rule and rule.brightness is not None) else 50
         self._sl_bri, self._lbl_bri, self._chk_skip_bri = self._make_slider_row(
-            layout, "Luminosité", bri_val, 0, 100, "%",
+            layout, _("Luminosité"), bri_val, 0, 100, "%",
             skip=(rule.brightness is None if rule else False),
         )
 
         # ── Contrast ──────────────────────────────────────────────────────
         con_val = rule.contrast if (rule and rule.contrast is not None) else 50
         self._sl_con, self._lbl_con, self._chk_skip_con = self._make_slider_row(
-            layout, "Contraste", con_val, 0, 100, "%",
+            layout, _("Contraste"), con_val, 0, 100, "%",
             skip=(rule.contrast is None if rule else True),
         )
 
         # ── Gamma ─────────────────────────────────────────────────────────
         gam_val = int(round((rule.gamma if (rule and rule.gamma is not None) else 1.0) * 100))
         self._sl_gam, self._lbl_gam, self._chk_skip_gam = self._make_slider_row(
-            layout, "Gamma GPU", gam_val, 50, 200, "",
+            layout, _("Gamma GPU"), gam_val, 50, 200, "",
             skip=(rule.gamma is None if rule else True),
             fmt_fn=lambda v: f"{v/100:.2f}",
         )
@@ -220,16 +221,16 @@ class _RuleFormDialog(QDialog):
         layout.addWidget(self._make_sep())
 
         # ── RGB Gains (colorimetry) ────────────────────────────────────────
-        lbl_rgb_hdr = QLabel("Colorimétrie  —  Gains RVB")
+        lbl_rgb_hdr = QLabel(_("Colorimétrie  —  Gains RVB"))
         lbl_rgb_hdr.setStyleSheet(
             f"font-size:12px; font-weight:600; color:{TEXT_COLOR};"
         )
         layout.addWidget(lbl_rgb_hdr)
 
-        lbl_rgb_info = QLabel(
+        lbl_rgb_info = QLabel(_(
             "Ajuste les canaux R/V/B indépendamment via DDC-CI  "
             "(nécessite le support Gains utilisateur sur le moniteur)."
-        )
+        ))
         lbl_rgb_info.setWordWrap(True)
         lbl_rgb_info.setStyleSheet(f"font-size:10px; color:{TEXT_MUTED};")
         layout.addWidget(lbl_rgb_info)
@@ -238,7 +239,7 @@ class _RuleFormDialog(QDialog):
         has_rgb = rule is not None and any(
             v is not None for v in (rule.red, rule.green, rule.blue)
         )
-        self._chk_skip_rgb = QCheckBox("Ne pas modifier les gains RVB")
+        self._chk_skip_rgb = QCheckBox(_("Ne pas modifier les gains RVB"))
         self._chk_skip_rgb.setChecked(not has_rgb)
         self._chk_skip_rgb.setStyleSheet(f"font-size:11px; color:{TEXT_MUTED};")
         layout.addWidget(self._chk_skip_rgb)
@@ -253,14 +254,14 @@ class _RuleFormDialog(QDialog):
         g_val = rule.green if (rule and rule.green is not None) else 100
         b_val = rule.blue  if (rule and rule.blue  is not None) else 100
 
-        self._sl_r, self._lbl_r = self._make_rgb_slider(rgb_l, "Rouge", r_val, "#FF6060")
-        self._sl_g, self._lbl_g = self._make_rgb_slider(rgb_l, "Vert",  g_val, "#60D060")
-        self._sl_b, self._lbl_b = self._make_rgb_slider(rgb_l, "Bleu",  b_val, "#60CDFF")
+        self._sl_r, self._lbl_r = self._make_rgb_slider(rgb_l, _("Rouge"), r_val, "#FF6060")
+        self._sl_g, self._lbl_g = self._make_rgb_slider(rgb_l, _("Vert"),  g_val, "#60D060")
+        self._sl_b, self._lbl_b = self._make_rgb_slider(rgb_l, _("Bleu"),  b_val, "#60CDFF")
 
         # Live preview swatch
         preview_row = QHBoxLayout()
         preview_row.setSpacing(8)
-        lbl_prev = QLabel("Aperçu :")
+        lbl_prev = QLabel(_("Aperçu :"))
         lbl_prev.setStyleSheet(f"font-size:11px; color:{TEXT_MUTED};")
         self._swatch = QLabel()
         self._swatch.setFixedSize(48, 18)
@@ -288,11 +289,11 @@ class _RuleFormDialog(QDialog):
         # ── Save / Cancel ─────────────────────────────────────────────────
         btn_row = QHBoxLayout()
         btn_row.addStretch()
-        btn_cancel = QPushButton("Annuler")
+        btn_cancel = QPushButton(_("Annuler"))
         btn_cancel.setProperty("class", "pill-muted")
         btn_cancel.setCursor(Qt.PointingHandCursor)
         btn_cancel.clicked.connect(self.reject)
-        btn_save = QPushButton("Enregistrer")
+        btn_save = QPushButton(_("Enregistrer"))
         btn_save.setProperty("class", "pill")
         btn_save.setCursor(Qt.PointingHandCursor)
         btn_save.clicked.connect(self._save)
@@ -359,7 +360,7 @@ class _RuleFormDialog(QDialog):
         row.addWidget(val_lbl)
         layout.addLayout(row)
 
-        chk = QCheckBox("Ne pas modifier")
+        chk = QCheckBox(_("Ne pas modifier"))
         chk.setChecked(skip)
         chk.setStyleSheet(f"font-size:11px; color:{TEXT_MUTED};")
         chk.toggled.connect(lambda v, s=sl, lbl=val_lbl: (
@@ -419,7 +420,7 @@ class _RuleFormDialog(QDialog):
         proc_current = self._inp_proc.text().strip().lower()
         self._cmb_apps.blockSignals(True)
         self._cmb_apps.clear()
-        self._cmb_apps.addItem("— choisir une app —", None)
+        self._cmb_apps.addItem(_("— choisir une app —"), None)
         selected_idx = 0
         for i, (exe, title) in enumerate(self._running_apps, start=1):
             self._cmb_apps.addItem(f"{title}  ({exe})", exe)
@@ -479,7 +480,7 @@ class AppRulesDialog(QDialog):
 
     def __init__(self, rules: list[AppRule], detection_active: bool = True, parent=None) -> None:
         super().__init__(parent)
-        self.setWindowTitle("Profils automatiques par application")
+        self.setWindowTitle(_("Profils par application"))
         self.setMinimumSize(520, 580)
         self.setWindowFlags(Qt.Dialog | Qt.WindowCloseButtonHint)
         # DO NOT set inline stylesheet — inherit from global app stylesheet
@@ -510,7 +511,7 @@ class AppRulesDialog(QDialog):
 
         # Detection status / warning banner
         if not detection_active:
-            warn = QLabel("⚠  Détection désactivée — activez « Profils par application » dans la fenêtre principale.")
+            warn = QLabel("⚠  " + _("Détection inactive — activez les profils dans la fenêtre principale."))
             warn.setWordWrap(True)
             warn.setStyleSheet(
                 "font-size:11px; color:#F0A000;"
@@ -523,7 +524,7 @@ class AppRulesDialog(QDialog):
             current_proc = get_foreground_process()
             proc_row = QHBoxLayout()
             proc_row.setSpacing(6)
-            lbl_proc_prefix = QLabel("Process actif :")
+            lbl_proc_prefix = QLabel(_("App en focus :"))
             lbl_proc_prefix.setStyleSheet(f"font-size:11px; color:{TEXT_MUTED};")
             lbl_proc_val = QLabel(current_proc or "—")
             lbl_proc_val.setStyleSheet(
@@ -560,17 +561,17 @@ class AppRulesDialog(QDialog):
         foot_l.setContentsMargins(14, 10, 14, 14)
         foot_l.setSpacing(8)
 
-        btn_add = QPushButton("+ Ajouter une règle")
+        btn_add = QPushButton("+ " + _("Ajouter une règle"))
         btn_add.setProperty("class", "pill")
         btn_add.setCursor(Qt.PointingHandCursor)
         btn_add.clicked.connect(self._add_rule)
 
-        btn_reset = QPushButton("Rétablir les défauts")
+        btn_reset = QPushButton(_("Rétablir les défauts"))
         btn_reset.setProperty("class", "pill-muted")
         btn_reset.setCursor(Qt.PointingHandCursor)
         btn_reset.clicked.connect(self._reset_defaults)
 
-        btn_close = QPushButton("Fermer")
+        btn_close = QPushButton(_("Fermer"))
         btn_close.setProperty("class", "pill-muted")
         btn_close.setCursor(Qt.PointingHandCursor)
         btn_close.clicked.connect(self.accept)
@@ -603,7 +604,7 @@ class AppRulesDialog(QDialog):
                 item.widget().deleteLater()
 
         if not self._rules:
-            empty = QLabel("Aucune règle — cliquez sur « Ajouter une règle » pour commencer.")
+            empty = QLabel(_("Aucun profil configuré.\nCliquez sur  +  pour ajouter."))
             empty.setStyleSheet(f"color:{TEXT_MUTED}; font-size:12px; padding:24px;")
             empty.setAlignment(Qt.AlignCenter)
             self._list_l.insertWidget(0, empty)

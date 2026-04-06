@@ -16,6 +16,7 @@ DEFAULT_SETTINGS: dict = {
     "sync_offset_bri": 0,
     "sync_offset_con": 0,
     "gamma_value": 1.0,
+    "gamma_values": {},         # per-monitor gamma: {device_name: float}
     "focus_enabled": False,
     "focus_dim": 20,
     "app_rules_enabled": False,

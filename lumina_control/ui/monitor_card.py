@@ -7,7 +7,8 @@ from PySide6.QtWidgets import (
 )
 
 from lumina_control.config import ACCENT_COLOR, CARD_HOVER
-from lumina_control.utils import wake_all_monitors
+from lumina_control.i18n import _
+from lumina_control.utils import set_device_gamma, wake_all_monitors
 from lumina_control.monitor_enumerate import MonitorDescriptor
 from lumina_control.ui.calibration import CalibrationDialog
 
@@ -36,7 +37,8 @@ class MonitorCard(QFrame):
         self.device_name = descriptor.device_name
         self.sync_hook     = sync_hook
         self.sync_rgb_hook = sync_rgb_hook
-        self.power_on = True
+        self.power_on   = True
+        self.gamma_value = 1.0
 
         # Debounce timer so we don't flood DDC-CI on every slider tick
         self._timer = QTimer(singleShot=True, interval=150)
@@ -48,7 +50,7 @@ class MonitorCard(QFrame):
         if self.monitor is not None:
             QTimer.singleShot(100, self._read_initial)
         else:
-            self.lbl_name.setText(f"Écran {self.index + 1}  (N/A)")
+            self.lbl_name.setText(_("Écran {}  (N/A)").format(self.index + 1))
             self.setEnabled(False)
 
     # ── UI construction ───────────────────────────────────────────────────────
@@ -90,8 +92,28 @@ class MonitorCard(QFrame):
         layout.addWidget(self.lbl_details)
 
         # Brightness / contrast sliders
-        self._add_slider_row(layout, "☀  Lum.", self._on_brightness_change, "bri")
-        self._add_slider_row(layout, "◑  Con.", self._on_contrast_change,   "con")
+        self._add_slider_row(layout, _("☀  Lum."), self._on_brightness_change, "bri")
+        self._add_slider_row(layout, _("◑  Con."), self._on_contrast_change,   "con")
+
+        # Gamma slider (GPU-based, independent of DDC-CI)
+        row_g = QHBoxLayout()
+        row_g.setSpacing(8)
+        lbl_g = QLabel(_("γ  Gamma"))
+        lbl_g.setObjectName("Subtle")
+        lbl_g.setFixedWidth(56)
+        self.sl_gamma = QSlider(Qt.Horizontal)
+        self.sl_gamma.setRange(60, 240)
+        self.sl_gamma.setValue(100)
+        self.sl_gamma.valueChanged.connect(self._on_gamma_label)
+        self.sl_gamma.sliderReleased.connect(self._apply_gamma)
+        self.lbl_gamma = QLabel("1.00")
+        self.lbl_gamma.setObjectName("ValueBadge")
+        self.lbl_gamma.setFixedWidth(34)
+        self.lbl_gamma.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        row_g.addWidget(lbl_g)
+        row_g.addWidget(self.sl_gamma)
+        row_g.addWidget(self.lbl_gamma)
+        layout.addLayout(row_g)
 
     def _screen_details(self) -> str:  # kept for compat, prefer descriptor.details
         return self.descriptor.details
@@ -131,7 +153,7 @@ class MonitorCard(QFrame):
                 val.setText(str(v))
         except Exception as e:
             log.debug("Cannot read monitor %d: %s", self.index, e)
-            self.lbl_name.setText(f"Écran {self.index + 1}  (N/A)")
+            self.lbl_name.setText(_("Écran {}  (N/A)").format(self.index + 1))
             self.setEnabled(False)
 
     def _on_brightness_change(self, v: int) -> None:
@@ -176,6 +198,24 @@ class MonitorCard(QFrame):
             log.debug("DDC-CI write failed on monitor %d: %s", self.index, e)
         if self.sync_hook and (applied_bri is not None or applied_con is not None):
             self.sync_hook(self.device_name, applied_bri, applied_con)
+
+    # ── Gamma (GPU / GDI32) ──────────────────────────────────────────────────
+
+    def _on_gamma_label(self, v: int) -> None:
+        self.gamma_value = v / 100.0
+        self.lbl_gamma.setText(f"{self.gamma_value:.2f}")
+
+    def _apply_gamma(self) -> None:
+        set_device_gamma(self.device_name, self.gamma_value)
+
+    def set_gamma_value(self, gamma: float) -> None:
+        """Set gamma on this monitor: update slider, label and apply via GDI32."""
+        self.gamma_value = max(0.6, min(2.4, float(gamma)))
+        self.sl_gamma.blockSignals(True)
+        self.sl_gamma.setValue(int(round(self.gamma_value * 100)))
+        self.sl_gamma.blockSignals(False)
+        self.lbl_gamma.setText(f"{self.gamma_value:.2f}")
+        set_device_gamma(self.device_name, self.gamma_value)
 
     # ── RGB gains (DDC-CI) ───────────────────────────────────────────────────
 
