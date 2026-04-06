@@ -3,10 +3,12 @@ name: CI
 on:
   push:
     branches: [main]
+    tags: ["v*"]
   pull_request:
     branches: [main]
 
 jobs:
+  # ── 1. Lint ──────────────────────────────────────────────────────────────────
   lint:
     name: Syntax & style check
     runs-on: windows-latest
@@ -37,16 +39,16 @@ jobs:
           if errors:
             print("\n".join(errors))
             sys.exit(1)
-          print(f"All Python files OK ({len(list(pathlib.Path('.').rglob('*.py')))} checked)")
+          print(f"All Python files OK ({sum(1 for _ in pathlib.Path('.').rglob('*.py'))} checked)")
 
-      - name: Pyflakes (undefined names)
+      - name: Pyflakes (undefined names / unused imports)
         run: python -m pyflakes lumina_control/
 
+  # ── 2. Build ─────────────────────────────────────────────────────────────────
   build:
-    name: PyInstaller build
+    name: Build installer
     runs-on: windows-latest
     needs: lint
-    # Only run on push to main (not PRs) to save runner minutes
     if: github.event_name == 'push'
 
     steps:
@@ -57,16 +59,77 @@ jobs:
         with:
           python-version: "3.11"
 
+      - name: Cache pip packages
+        uses: actions/cache@v4
+        with:
+          path: ~\AppData\Local\pip\Cache
+          key: pip-py3.11-${{ hashFiles('LuminaControl.spec') }}
+          restore-keys: pip-py3.11-
+
       - name: Install dependencies
-        run: |
-          pip install PySide6 monitorcontrol screeninfo pywin32 pyinstaller
+        run: pip install PySide6 monitorcontrol screeninfo pywin32 pyinstaller
 
       - name: Build with PyInstaller
-        run: pyinstaller LuminaControl.spec
+        run: pyinstaller LuminaControl.spec --noconfirm
 
-      - name: Upload executable
+      - name: Build installer with Inno Setup
+        run: '& "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer.iss'
+
+      - name: Upload installer artifact
         uses: actions/upload-artifact@v4
         with:
-          name: LuminaControl-exe
-          path: dist/LuminaControl.exe
-          if-no-files-found: warn
+          name: LuminaControlSetup
+          path: dist-installer\LuminaControlSetup.exe
+          if-no-files-found: error
+
+  # ── 3. Release (tag v* only) ─────────────────────────────────────────────────
+  release:
+    name: GitHub Release
+    runs-on: windows-latest
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify tag matches AppVersion in installer.iss
+        shell: python
+        run: |
+          import re, sys, os
+          tag = os.environ["GITHUB_REF_NAME"]          # e.g. "v1.2.3"
+          version = tag.lstrip("v")                    # e.g. "1.2.3"
+          iss = open("installer.iss", encoding="utf-8").read()
+          m = re.search(r"^AppVersion=(.+)$", iss, re.MULTILINE)
+          if not m:
+              print("AppVersion not found in installer.iss")
+              sys.exit(1)
+          iss_version = m.group(1).strip()
+          if iss_version != version:
+              print(f"Tag {tag!r} != AppVersion {iss_version!r} in installer.iss")
+              sys.exit(1)
+          print(f"Version OK: {version}")
+
+      - name: Download installer artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: LuminaControlSetup
+          path: dist-installer
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "Lumina Control ${{ github.ref_name }}"
+          body: |
+            ## Lumina Control ${{ github.ref_name }}
+
+            ### Installation
+            Télécharge et exécute **LuminaControlSetup.exe**.
+            Nécessite Windows 10/11 et des écrans compatibles DDC-CI.
+
+            ### Changelog
+            Voir les [commits](${{ github.server_url }}/${{ github.repository }}/commits/${{ github.ref_name }}) pour le détail des changements.
+          files: dist-installer\LuminaControlSetup.exe
+          fail_on_unmatched_files: true
+          generate_release_notes: false
