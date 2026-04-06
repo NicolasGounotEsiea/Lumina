@@ -174,5 +174,5 @@ Voir les [issues ouvertes](https://github.com/NicolasGounotEsiea/Lumina/issues) 
 ## Licence
 
 Propriétaire — voir [LICENSE](LICENSE).
-Tous droits réservés © 2024-2025 Nicolas Gougnot.
+Tous droits réservés © 2024-2025 Nicolas Gounot.
 Usage personnel sur une machine par licence achetée. Redistribution et décompilation interdites.
