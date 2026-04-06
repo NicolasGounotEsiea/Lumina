@@ -19,11 +19,27 @@ def wake_all_monitors() -> None:
     win32api.mouse_event(win32con.MOUSEEVENTF_MOVE, -1, -1, 0, 0)
 
 
+_monitors_cache: list | None = None
+
+
+def invalidate_monitors_cache() -> None:
+    """Call after a monitor configuration change to force re-enumeration."""
+    global _monitors_cache
+    _monitors_cache = None
+
+
+def _get_monitors_cached() -> list:
+    global _monitors_cache
+    if _monitors_cache is None:
+        from screeninfo import get_monitors
+        _monitors_cache = get_monitors()
+    return _monitors_cache
+
+
 def get_active_screen_index() -> int:
     """Return the index of the screen that currently contains the cursor."""
-    from screeninfo import get_monitors
     pos = QCursor.pos()
-    for i, m in enumerate(get_monitors()):
+    for i, m in enumerate(_get_monitors_cached()):
         if m.x <= pos.x() < m.x + m.width and m.y <= pos.y() < m.y + m.height:
             return i
     return 0

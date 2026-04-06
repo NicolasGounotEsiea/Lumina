@@ -22,7 +22,7 @@ from lumina_control import startup as _startup
 from lumina_control.updater import UpdateChecker
 from lumina_control.utils import (
     get_active_screen_index, get_foreground_process,
-    get_foreground_window_monitor, wake_all_monitors,
+    get_foreground_window_monitor, invalidate_monitors_cache, wake_all_monitors,
 )
 from lumina_control.monitor_enumerate import enumerate_monitors
 from lumina_control.ui.monitor_card import MonitorCard
@@ -658,6 +658,7 @@ class MainWindow(QWidget):
     # ─────────────────────────────────────────────────────────────────────────
 
     def refresh(self) -> None:
+        invalidate_monitors_cache()
         while self.mon_l.count():
             w = self.mon_l.takeAt(0).widget()
             if w:
@@ -692,11 +693,12 @@ class MainWindow(QWidget):
             self._apply_focus(force=True)
 
     def _poll(self) -> None:
-        idx = get_active_screen_index()
+        need_idx = self.isVisible() or self.focus_enabled
+        idx = get_active_screen_index() if need_idx else -1
         if self.isVisible():
             for c in self.cards:
                 c.set_active(c.index == idx)
-        self._apply_focus()
+        self._apply_focus(active_idx=idx)
         if self.app_rules_enabled and not self.focus_enabled:
             self._check_app_rules()
 
@@ -1170,10 +1172,11 @@ class MainWindow(QWidget):
         self.pre_focus_values.clear()
         self._sync_guard = False
 
-    def _apply_focus(self, force: bool = False) -> None:
+    def _apply_focus(self, force: bool = False, active_idx: int = -1) -> None:
         if not self.focus_enabled or not self.cards:
             return
-        active_idx = get_active_screen_index()
+        if active_idx < 0:
+            active_idx = get_active_screen_index()
         target = self.sl_glob.value()
         dim = self.sl_focus_dim.value()
         bg = max(0, target - dim)

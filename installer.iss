@@ -3,7 +3,7 @@
 [Setup]
 AppName=Lumina Control
 AppVersion=1.0.0
-AppPublisher=Your Name
+AppPublisher=Nicolas Gounot
 DefaultDirName={pf}\Lumina Control
 DefaultGroupName=Lumina Control
 UninstallDisplayIcon={app}\LuminaControl.exe
