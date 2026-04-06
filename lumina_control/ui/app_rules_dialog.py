@@ -513,8 +513,8 @@ class AppRulesDialog(QDialog):
             warn = QLabel("⚠  Détection désactivée — activez « Profils par application » dans la fenêtre principale.")
             warn.setWordWrap(True)
             warn.setStyleSheet(
-                f"font-size:11px; color:#F0A000;"
-                f" background:rgba(240,160,0,0.12); border-radius:6px; padding:6px 8px;"
+                "font-size:11px; color:#F0A000;"
+                " background:rgba(240,160,0,0.12); border-radius:6px; padding:6px 8px;"
             )
             hdr_l.addWidget(warn)
         else:

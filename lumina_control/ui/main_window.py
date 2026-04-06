@@ -486,7 +486,7 @@ class MainWindow(QWidget):
 
         # Real-time process display (visible when enabled)
         self._lbl_proc_detect = QLabel("")
-        self._lbl_proc_detect.setStyleSheet(f"font-size:10px; color:#505050;")
+        self._lbl_proc_detect.setStyleSheet("font-size:10px; color:#505050;")
         sec.add_widget(self._lbl_proc_detect)
 
         # Manage button
@@ -764,7 +764,7 @@ class MainWindow(QWidget):
         else:
             self._lbl_rule_status.setText("Aucune règle active")
             self._lbl_rule_status.setStyleSheet(
-                f"font-size:11px; color:#606060;"
+                "font-size:11px; color:#606060;"
             )
 
     def _set_app_rules_enabled(self, enabled: bool) -> None:
