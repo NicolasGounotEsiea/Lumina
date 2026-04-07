@@ -3,7 +3,7 @@ import os
 import sys
 
 APP_NAME = "Lumina Control"
-APP_VERSION = "1.0.0"
+APP_VERSION = "1.2.0"
 APP_WIDTH = 420
 SINGLE_INSTANCE_SERVER = "LuminaControl_SingleInstance"
 
@@ -62,3 +62,7 @@ def get_settings_path() -> str:
 
 def get_rules_path() -> str:
     return os.path.join(get_app_data_dir(), "app_rules.json")
+
+
+def get_named_profiles_path() -> str:
+    return os.path.join(get_app_data_dir(), "named_profiles.json")

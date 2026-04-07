@@ -49,7 +49,11 @@ _EN: dict[str, str] = {
     "Activé":                           "On",
     "Désactivé":                        "Off",
     "Atténuation":                      "Dim amount",
-    "INSTANTANÉ":                       "SNAPSHOT",
+    "SAUVEGARDE RAPIDE":                "QUICK SAVE",
+    "Mémorise l'état actuel en 1 clic — utile avant d'expérimenter.":
+        "Saves the current state in one click — useful before experimenting.",
+    "Préréglages permanents nommés — luminosité, contraste et gamma par écran.":
+        "Permanent named presets — brightness, contrast and gamma per screen.",
     "Sauver":                           "Save",
     "Restaurer":                        "Restore",
     "Aucun instantané":                 "No snapshot",
@@ -122,6 +126,18 @@ _EN: dict[str, str] = {
     "Lancer au démarrage de Windows":   "Launch at Windows startup",
     "Mise à jour disponible : {}":      "Update available: {}",
     "Télécharger":                      "Download",
+
+    # ── named profiles ───────────────────────────────────────────────────────
+    "PROFILS NOMMÉS":                   "NAMED PROFILES",
+    "Nom du profil":                    "Profile name",
+    "Sauver le profil":                 "Save profile",
+    "Charger":                          "Load",
+    "Aucun profil sauvegardé":          "No saved profiles",
+
+    # ── night mode ───────────────────────────────────────────────────────────
+    "MODE NUIT":                        "NIGHT MODE",
+    "Activer le mode nuit":             "Enable night mode",
+    "Chaleur":                          "Warmth",
 
     # ── calibration ──────────────────────────────────────────────────────────
     "Calibrage RGB":                    "RGB Calibration",

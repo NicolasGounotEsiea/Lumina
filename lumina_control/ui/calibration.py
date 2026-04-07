@@ -49,7 +49,7 @@ class CalibrationDialog(QDialog):
 
         info = QLabel(_("Ajustement fin des gains RGB (si supporté par l'écran)."))
         info.setWordWrap(True)
-        info.setStyleSheet("color: #4e5d78; font-size: 11px; font-style: italic;")
+        info.setObjectName("Subtle")
         layout.addWidget(info)
 
         # Unlock "User Color" mode before adjusting
@@ -223,10 +223,7 @@ class CalibrationWizard(QDialog):
         layout.addWidget(self.lbl_step)
 
         self.lbl_title = QLabel()
-        self.lbl_title.setObjectName("SectionTitle")
-        self.lbl_title.setStyleSheet(
-            "font-size:13px; font-weight:600; color:#e2e8f0;"
-        )
+        self.lbl_title.setObjectName("Title")
         layout.addWidget(self.lbl_title)
 
         self.lbl_help = QLabel()

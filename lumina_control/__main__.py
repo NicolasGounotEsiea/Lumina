@@ -37,7 +37,8 @@ def main() -> None:
     from PySide6.QtWidgets import QApplication
     from PySide6.QtGui import QFont
     from lumina_control.config import APP_NAME, SINGLE_INSTANCE_SERVER
-    from lumina_control.style import STYLESHEET
+    from lumina_control.style import get_stylesheet
+    from lumina_control.utils import is_windows_dark_mode
 
     # ── Single-instance guard ─────────────────────────────────────────────────
     probe = QLocalSocket()
@@ -57,7 +58,20 @@ def main() -> None:
     font = QFont("Segoe UI")
     font.setPointSize(10)
     app.setFont(font)
-    app.setStyleSheet(STYLESHEET)
+
+    # Apply stylesheet matching the current Windows theme
+    _dark = [is_windows_dark_mode()]
+    app.setStyleSheet(get_stylesheet(_dark[0]))
+
+    from PySide6.QtCore import QTimer as _QTimer
+    def _check_theme() -> None:
+        d = is_windows_dark_mode()
+        if d != _dark[0]:
+            _dark[0] = d
+            app.setStyleSheet(get_stylesheet(d))
+    _theme_timer = _QTimer(app)   # parent = app keeps it alive
+    _theme_timer.timeout.connect(_check_theme)
+    _theme_timer.start(5000)  # check every 5 s
 
     icon_path = _resolve_icon()
 

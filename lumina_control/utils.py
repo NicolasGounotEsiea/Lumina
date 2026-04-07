@@ -3,6 +3,7 @@ import ctypes
 import ctypes.wintypes
 import logging
 import os
+import winreg
 
 import win32api
 import win32con
@@ -45,27 +46,52 @@ def get_active_screen_index() -> int:
     return 0
 
 
+# ── Windows theme detection ───────────────────────────────────────────────────
+
+def is_windows_dark_mode() -> bool:
+    """Return True if Windows apps are in dark mode (AppsUseLightTheme == 0)."""
+    try:
+        key = winreg.OpenKey(
+            winreg.HKEY_CURRENT_USER,
+            r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize",
+        )
+        value, _ = winreg.QueryValueEx(key, "AppsUseLightTheme")
+        winreg.CloseKey(key)
+        return value == 0  # 0 = dark, 1 = light
+    except Exception:
+        return True  # default to dark
+
+
 # ── Gamma correction (Windows GDI32) ─────────────────────────────────────────
 
-def _build_gamma_ramp(gamma: float):
+def _build_combined_ramp(gamma: float, warmth: float = 0.0):
+    """Build a GDI32 gamma ramp combining gamma correction and warm night tint.
+
+    *warmth* 0.0 = neutral, 1.0 = maximum warm (−70 % blue, +5 % red).
+    """
     gamma = max(0.5, min(3.0, float(gamma)))
+    warmth = max(0.0, min(1.0, float(warmth)))
     ramp = (ctypes.c_ushort * (256 * 3))()
+    r_mult = 1.0 + warmth * 0.05
+    g_mult = 1.0 - warmth * 0.05
+    b_mult = 1.0 - warmth * 0.70
     for i in range(256):
-        v = min(65535, int(pow(i / 255.0, 1.0 / gamma) * 65535 + 0.5))
-        ramp[i] = v
-        ramp[256 + i] = v
-        ramp[512 + i] = v
+        base = pow(i / 255.0, 1.0 / gamma) * 65535
+        ramp[i]       = min(65535, int(base * r_mult + 0.5))
+        ramp[256 + i] = min(65535, int(base * g_mult + 0.5))
+        ramp[512 + i] = min(65535, int(base * b_mult + 0.5))
     return ramp
 
 
-def set_device_gamma(device_name: str | None, gamma: float) -> bool:
-    """Apply gamma ramp to *device_name* via SetDeviceGammaRamp. Returns success."""
+def set_device_gamma(device_name: str | None, gamma: float,
+                     warmth: float = 0.0) -> bool:
+    """Apply gamma + optional warm tint to *device_name* via SetDeviceGammaRamp."""
     if not device_name:
         return False
     hdc = ctypes.windll.gdi32.CreateDCW("DISPLAY", device_name, None, None)
     if not hdc:
         return False
-    ramp = _build_gamma_ramp(gamma)
+    ramp = _build_combined_ramp(gamma, warmth)
     ok = bool(ctypes.windll.gdi32.SetDeviceGammaRamp(hdc, ctypes.byref(ramp)))
     ctypes.windll.gdi32.DeleteDC(hdc)
     return ok

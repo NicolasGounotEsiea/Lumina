@@ -6,7 +6,7 @@ from PySide6.QtWidgets import (
     QFrame, QHBoxLayout, QLabel, QPushButton, QSlider, QVBoxLayout,
 )
 
-from lumina_control.config import ACCENT_COLOR, CARD_HOVER
+from lumina_control.config import ACCENT_COLOR
 from lumina_control.i18n import _
 from lumina_control.utils import set_device_gamma, wake_all_monitors
 from lumina_control.monitor_enumerate import MonitorDescriptor
@@ -124,6 +124,7 @@ class MonitorCard(QFrame):
         self.sync_rgb_hook = sync_rgb_hook
         self.power_on      = True
         self.gamma_value   = 1.0
+        self.current_warmth: float = 0.0
 
         # Debounce timer — fires after 150 ms of slider inactivity
         self._timer = QTimer(singleShot=True, interval=150)
@@ -316,7 +317,7 @@ class MonitorCard(QFrame):
         self.lbl_gamma.setText(f"{self.gamma_value:.2f}")
 
     def _apply_gamma(self) -> None:
-        set_device_gamma(self.device_name, self.gamma_value)
+        set_device_gamma(self.device_name, self.gamma_value, self.current_warmth)
 
     def set_gamma_value(self, gamma: float) -> None:
         """Set gamma on this monitor: update slider, label and apply via GDI32."""
@@ -325,7 +326,12 @@ class MonitorCard(QFrame):
         self.sl_gamma.setValue(int(round(self.gamma_value * 100)))
         self.sl_gamma.blockSignals(False)
         self.lbl_gamma.setText(f"{self.gamma_value:.2f}")
-        set_device_gamma(self.device_name, self.gamma_value)
+        set_device_gamma(self.device_name, self.gamma_value, self.current_warmth)
+
+    def set_warmth(self, warmth: float) -> None:
+        """Apply warm tint to this monitor (0.0 = neutral, 1.0 = max warm)."""
+        self.current_warmth = warmth
+        set_device_gamma(self.device_name, self.gamma_value, warmth)
 
     # ── RGB gains (dispatched to worker thread) ───────────────────────────────
 
@@ -388,10 +394,6 @@ class MonitorCard(QFrame):
     # ── Active highlight ──────────────────────────────────────────────────────
 
     def set_active(self, is_active: bool) -> None:
-        if is_active:
-            self.setStyleSheet(
-                f"QFrame#Card {{ border: 1px solid {ACCENT_COLOR};"
-                f" background-color: {CARD_HOVER}; }}"
-            )
-        else:
-            self.setStyleSheet("")
+        self.setProperty("active", "true" if is_active else "false")
+        self.style().unpolish(self)
+        self.style().polish(self)

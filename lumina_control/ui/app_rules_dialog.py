@@ -4,17 +4,14 @@ from __future__ import annotations
 import logging
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QColor, QPainter, QPainterPath
+from PySide6.QtGui import QColor  # used for RGB swatch
 from PySide6.QtWidgets import (
     QCheckBox, QComboBox, QDialog, QFrame, QHBoxLayout, QLabel,
     QLineEdit, QPushButton, QScrollArea, QSlider, QVBoxLayout, QWidget,
 )
 
 from lumina_control.app_rules import AppRule, DEFAULT_RULES
-from lumina_control.config import (
-    ACCENT_COLOR, BORDER_ACCENT, BORDER_COLOR,
-    CARD_COLOR, TEXT_COLOR, TEXT_MUTED,
-)
+from lumina_control.config import ACCENT_COLOR, TEXT_MUTED
 from lumina_control.i18n import _
 
 log = logging.getLogger(__name__)
@@ -33,10 +30,8 @@ class _RuleRow(QFrame):
     def __init__(self, rule: AppRule, index: int, parent=None) -> None:
         super().__init__(parent)
         self._index = index
+        self.setObjectName("RuleRow")
         self.setMinimumHeight(60)
-        # No setStyleSheet here — using paintEvent instead to avoid cascade
-        # interference that would block child buttons from inheriting the
-        # global app stylesheet (QPushButton[class="icon-btn"] etc.)
 
         h = QHBoxLayout(self)
         h.setContentsMargins(10, 10, 10, 10)
@@ -53,10 +48,8 @@ class _RuleRow(QFrame):
         info.setSpacing(2)
 
         self._lbl_name = QLabel(rule.label)
-        self._lbl_name.setStyleSheet(
-            f"font-size:13px; font-weight:600;"
-            f" color:{'#606060' if not rule.enabled else TEXT_COLOR};"
-        )
+        self._lbl_name.setObjectName("RuleRowName")
+        self._lbl_name.setProperty("rule-enabled", "true" if rule.enabled else "false")
         info.addWidget(self._lbl_name)
 
         parts = [f"<b>{rule.process}</b>"]
@@ -73,7 +66,7 @@ class _RuleRow(QFrame):
             parts.append(f"RVB: {r}/{g}/{b}")
 
         detail = QLabel("  ·  ".join(parts))
-        detail.setStyleSheet(f"font-size:11px; color:{TEXT_MUTED};")
+        detail.setObjectName("RuleRowDetail")
         detail.setTextFormat(Qt.RichText)
         info.addWidget(detail)
 
@@ -97,20 +90,10 @@ class _RuleRow(QFrame):
         btn_del.clicked.connect(lambda: self.delete_requested.emit(self._index))
         h.addWidget(btn_del)
 
-    def paintEvent(self, event) -> None:
-        p = QPainter(self)
-        p.setRenderHint(QPainter.Antialiasing)
-        path = QPainterPath()
-        path.addRoundedRect(self.rect(), 8, 8)
-        p.fillPath(path, QColor(CARD_COLOR))
-        p.setPen(QColor(BORDER_ACCENT))
-        p.drawPath(path)
-
     def set_enabled_visual(self, enabled: bool) -> None:
-        self._lbl_name.setStyleSheet(
-            f"font-size:13px; font-weight:600;"
-            f" color:{'#606060' if not enabled else TEXT_COLOR};"
-        )
+        self._lbl_name.setProperty("rule-enabled", "true" if enabled else "false")
+        self._lbl_name.style().unpolish(self._lbl_name)
+        self._lbl_name.style().polish(self._lbl_name)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -222,9 +205,7 @@ class _RuleFormDialog(QDialog):
 
         # ── RGB Gains (colorimetry) ────────────────────────────────────────
         lbl_rgb_hdr = QLabel(_("Colorimétrie  —  Gains RVB"))
-        lbl_rgb_hdr.setStyleSheet(
-            f"font-size:12px; font-weight:600; color:{TEXT_COLOR};"
-        )
+        lbl_rgb_hdr.setStyleSheet("font-size:12px; font-weight:600;")
         layout.addWidget(lbl_rgb_hdr)
 
         lbl_rgb_info = QLabel(_(
@@ -322,15 +303,10 @@ class _RuleFormDialog(QDialog):
         return lbl
 
     @staticmethod
-    def _make_sep() -> QWidget:
-        w = QWidget()
-        w.setFixedHeight(1)
-        # Paint via palette — no stylesheet, no cascade interference
-        from PySide6.QtGui import QPalette
-        pal = w.palette()
-        pal.setColor(QPalette.Window, QColor(BORDER_COLOR))
-        w.setAutoFillBackground(True)
-        w.setPalette(pal)
+    def _make_sep() -> QFrame:
+        w = QFrame()
+        w.setObjectName("Separator")
+        w.setFrameShape(QFrame.HLine)
         return w
 
     def _make_slider_row(
@@ -587,14 +563,10 @@ class AppRulesDialog(QDialog):
     # ── List helpers ──────────────────────────────────────────────────────────
 
     @staticmethod
-    def _sep() -> QWidget:
-        from PySide6.QtGui import QPalette
-        w = QWidget()
-        w.setFixedHeight(1)
-        pal = w.palette()
-        pal.setColor(QPalette.Window, QColor(BORDER_COLOR))
-        w.setAutoFillBackground(True)
-        w.setPalette(pal)
+    def _sep() -> QFrame:
+        w = QFrame()
+        w.setObjectName("Separator")
+        w.setFrameShape(QFrame.HLine)
         return w
 
     def _rebuild_list(self) -> None:

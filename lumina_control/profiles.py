@@ -20,15 +20,19 @@ DEFAULT_SETTINGS: dict = {
     "focus_enabled": False,
     "focus_dim": 20,
     "app_rules_enabled": False,
+    "night_mode_enabled": False,
+    "night_warmth": 50,         # 0-100
 }
 
 
 class ProfileManager:
     """Handles reading and writing snapshots and persistent app settings."""
 
-    def __init__(self, profile_path: str, settings_path: str) -> None:
+    def __init__(self, profile_path: str, settings_path: str,
+                 named_profiles_path: str = "") -> None:
         self._profile_path = profile_path
         self._settings_path = settings_path
+        self._named_path = named_profiles_path
 
     # ── Brightness / contrast snapshots ──────────────────────────────────────
 
@@ -55,6 +59,29 @@ class ProfileManager:
         # Only update keys we actually know about (ignore unknown saved keys)
         result.update({k: v for k, v in data.items() if k in DEFAULT_SETTINGS})
         return result
+
+    # ── Named profiles ────────────────────────────────────────────────────────
+
+    def list_named_profiles(self) -> list[str]:
+        """Return sorted list of saved named profile names."""
+        return sorted((self._read(self._named_path) or {}).keys())
+
+    def save_named_profile(self, name: str, monitors: list[dict],
+                           gamma_values: dict) -> None:
+        """Save/overwrite a named profile."""
+        data = self._read(self._named_path) or {}
+        data[name] = {"monitors": monitors, "gamma_values": gamma_values}
+        self._write(self._named_path, data)
+
+    def load_named_profile(self, name: str) -> dict | None:
+        """Return the named profile dict, or None if not found."""
+        return (self._read(self._named_path) or {}).get(name)
+
+    def delete_named_profile(self, name: str) -> None:
+        """Delete a named profile (no-op if not found)."""
+        data = self._read(self._named_path) or {}
+        data.pop(name, None)
+        self._write(self._named_path, data)
 
     # ── I/O helpers ───────────────────────────────────────────────────────────
 

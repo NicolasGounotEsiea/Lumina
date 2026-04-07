@@ -2,18 +2,18 @@
 import logging
 from functools import partial
 
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import Qt, QEasingCurve, QPropertyAnimation, QTimer, Signal
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QApplication, QCheckBox, QComboBox, QFileDialog,
     QFrame, QGraphicsDropShadowEffect, QHBoxLayout, QLabel,
-    QPushButton, QScrollArea, QSlider, QVBoxLayout, QWidget,
+    QLineEdit, QPushButton, QScrollArea, QSlider, QVBoxLayout, QWidget,
 )
 
 from lumina_control.config import (
     ACCENT_COLOR, APP_NAME, APP_WIDTH,
     BORDER_COLOR, WARM_COLOR,
-    get_profile_path, get_rules_path, get_settings_path,
+    get_named_profiles_path, get_profile_path, get_rules_path, get_settings_path,
 )
 from lumina_control.i18n import _
 from lumina_control.profiles import ProfileManager
@@ -48,6 +48,7 @@ class _CollapsibleSection(QWidget):
         self._btn.setCheckable(True)
         self._btn.setChecked(expanded)
         self._btn.setCursor(Qt.PointingHandCursor)
+        self._btn.setFocusPolicy(Qt.NoFocus)
         self._btn.clicked.connect(self._toggle)
         self._set_btn_text(expanded)
         vbox.addWidget(self._btn)
@@ -77,6 +78,8 @@ class _CollapsibleSection(QWidget):
 
 class MainWindow(QWidget):
 
+    brightness_changed = Signal(int)
+
     def __init__(self) -> None:
         super().__init__()
         self.setWindowTitle(APP_NAME)
@@ -84,7 +87,9 @@ class MainWindow(QWidget):
         self.setAttribute(Qt.WA_TranslucentBackground)
         self.setFixedWidth(APP_WIDTH)
 
-        self._profile = ProfileManager(get_profile_path(), get_settings_path())
+        self._profile = ProfileManager(
+            get_profile_path(), get_settings_path(), get_named_profiles_path()
+        )
 
         # Load persisted settings (defaults if no file)
         s = self._profile.load_settings()
@@ -100,6 +105,8 @@ class MainWindow(QWidget):
         self.focus_enabled         = s["focus_enabled"]
         self.focus_dim             = s["focus_dim"]
         self.app_rules_enabled     = s["app_rules_enabled"]
+        self.night_mode_enabled    = s["night_mode_enabled"]
+        self.night_warmth          = s["night_warmth"]
 
         # App rules engine
         self._rule_mgr        = AppRuleManager(get_rules_path())
@@ -168,7 +175,7 @@ class MainWindow(QWidget):
         header_l.setSpacing(6)
 
         icon_lbl = QLabel("◈")
-        icon_lbl.setStyleSheet(f"color:{ACCENT_COLOR}; font-size:17px; padding:0;")
+        icon_lbl.setObjectName("AccentIcon")
         title_lbl = QLabel(APP_NAME)
         title_lbl.setObjectName("AppTitle")
 
@@ -195,16 +202,26 @@ class MainWindow(QWidget):
         container_l.addWidget(header)
 
         sep_top = QFrame()
+        sep_top.setObjectName("Separator")
         sep_top.setFrameShape(QFrame.HLine)
-        sep_top.setStyleSheet(f"background:{BORDER_COLOR}; max-height:1px; border:none;")
         container_l.addWidget(sep_top)
 
         # ── Scrollable content ────────────────────────
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-        scroll.setMaximumHeight(600)
+        # AlwaysOn reserves the 6 px scrollbar track permanently.
+        # With AsNeeded the bar pops in when a section expands past the viewport
+        # height, stealing viewport width and triggering a full layout reflow —
+        # that's the visible "jump".  Our scrollbar is styled to 6 px and
+        # nearly invisible when inactive, so the reserved space is unnoticeable.
+        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
+        # Fixed height: prevents the window from resizing when sections are
+        # expanded/collapsed, which caused the visible "jump".  Content scrolls
+        # inside the panel just like any OS tray panel (volume, bluetooth…).
+        _avail_h = (QApplication.primaryScreen().availableGeometry().height()
+                    if QApplication.primaryScreen() else 1080)
+        scroll.setFixedHeight(min(560, max(420, int(_avail_h * 0.52))))
 
         content_w = QWidget()
         self.main_l = QVBoxLayout(content_w)
@@ -238,6 +255,7 @@ class MainWindow(QWidget):
 
         self.main_l.addWidget(self._sep())
         self._build_app_rules_section()
+        self._build_named_profiles_section()
         self._build_tools_section()
         self._build_settings_section()
 
@@ -278,6 +296,7 @@ class MainWindow(QWidget):
         self.sl_glob.setValue(50)
         self.sl_glob.sliderReleased.connect(self._apply_glob)
         self.sl_glob.valueChanged.connect(lambda v: self.lbl_glob_val.setText(f"{v}%"))
+        self.sl_glob.valueChanged.connect(self.brightness_changed)
         sl.addWidget(self.sl_glob)
 
         self.main_l.addWidget(strip)
@@ -293,11 +312,11 @@ class MainWindow(QWidget):
             f" background:rgba(252,185,0,0.08);"
         )
         btn_day.setCursor(Qt.PointingHandCursor)
-        btn_day.clicked.connect(partial(self._set_glob, 80))
+        btn_day.clicked.connect(self._preset_day)
         btn_night = QPushButton(_("☾  Nuit  25%"))
         btn_night.setProperty("class", "pill")
         btn_night.setCursor(Qt.PointingHandCursor)
-        btn_night.clicked.connect(partial(self._set_glob, 25))
+        btn_night.clicked.connect(self._preset_night)
         h_pre.addWidget(btn_day)
         h_pre.addWidget(btn_night)
         self.main_l.addLayout(h_pre)
@@ -461,7 +480,12 @@ class MainWindow(QWidget):
         self.main_l.addWidget(sec)
 
     def _build_snapshot_section(self) -> None:
-        sec = _CollapsibleSection(_("INSTANTANÉ"), expanded=True)
+        sec = _CollapsibleSection(_("SAUVEGARDE RAPIDE"), expanded=True)
+
+        desc = QLabel(_("Mémorise l'état actuel en 1 clic — utile avant d'expérimenter."))
+        desc.setObjectName("Subtle")
+        desc.setWordWrap(True)
+        sec.add_widget(desc)
 
         h = QHBoxLayout()
         h.setSpacing(6)
@@ -496,12 +520,12 @@ class MainWindow(QWidget):
 
         # Active rule status indicator
         self._lbl_rule_status = QLabel(_("Aucune règle active"))
-        self._lbl_rule_status.setStyleSheet("font-size:11px; color:#606060;")
+        self._lbl_rule_status.setObjectName("RuleStatus")
         sec.add_widget(self._lbl_rule_status)
 
         # Real-time process display (visible when enabled)
         self._lbl_proc_detect = QLabel("")
-        self._lbl_proc_detect.setStyleSheet("font-size:10px; color:#505050;")
+        self._lbl_proc_detect.setObjectName("ProcDetect")
         sec.add_widget(self._lbl_proc_detect)
 
         # Manage button
@@ -529,6 +553,118 @@ class MainWindow(QWidget):
         h.addWidget(btn_wizard)
         self.main_l.addLayout(h)
 
+    def _build_named_profiles_section(self) -> None:
+        sec = _CollapsibleSection(_("PROFILS NOMMÉS"), expanded=False)
+
+        desc = QLabel(_("Préréglages permanents nommés — luminosité, contraste et gamma par écran."))
+        desc.setObjectName("Subtle")
+        desc.setWordWrap(True)
+        sec.add_widget(desc)
+
+        # Save row
+        h = QHBoxLayout()
+        h.setSpacing(6)
+        self._profile_name_edit = QLineEdit()
+        self._profile_name_edit.setPlaceholderText(_("Nom du profil"))
+        btn_save_profile = QPushButton(_("Sauver le profil"))
+        btn_save_profile.setProperty("class", "pill")
+        btn_save_profile.setCursor(Qt.PointingHandCursor)
+        btn_save_profile.clicked.connect(self._save_named_profile)
+        h.addWidget(self._profile_name_edit, stretch=1)
+        h.addWidget(btn_save_profile)
+        sec.add_layout(h)
+
+        # Profile list container (rebuilt on save/delete)
+        self._named_profiles_container = QWidget()
+        self._named_profiles_layout = QVBoxLayout(self._named_profiles_container)
+        self._named_profiles_layout.setSpacing(4)
+        self._named_profiles_layout.setContentsMargins(0, 4, 0, 0)
+        sec.add_widget(self._named_profiles_container)
+        self._refresh_named_profiles_list()
+
+        self.main_l.addWidget(sec)
+
+    def _refresh_named_profiles_list(self) -> None:
+        lay = self._named_profiles_layout
+        while lay.count():
+            item = lay.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+
+        names = self._profile.list_named_profiles()
+        if not names:
+            lbl = QLabel(_("Aucun profil sauvegardé"))
+            lbl.setObjectName("Subtle")
+            lay.addWidget(lbl)
+            return
+
+        for name in names:
+            row = QHBoxLayout()
+            row.setSpacing(6)
+            row.setContentsMargins(10, 5, 6, 5)
+            lbl = QLabel(name)
+            lbl.setObjectName("Title")
+            btn_load = QPushButton(_("Charger"))
+            btn_load.setProperty("class", "pill-muted")
+            btn_load.setCursor(Qt.PointingHandCursor)
+            btn_load.setFixedWidth(72)
+            btn_load.clicked.connect(lambda _, n=name: self._load_named_profile(n))
+            btn_del = QPushButton("×")
+            btn_del.setProperty("class", "icon-btn")
+            btn_del.setProperty("danger", "true")
+            btn_del.setCursor(Qt.PointingHandCursor)
+            btn_del.setFixedSize(28, 28)
+            btn_del.clicked.connect(lambda _, n=name: self._delete_named_profile(n))
+            row.addWidget(lbl, stretch=1)
+            row.addWidget(btn_load)
+            row.addWidget(btn_del)
+            container = QWidget()
+            container.setObjectName("ProfileRow")
+            container.setLayout(row)
+            lay.addWidget(container)
+
+    def _save_named_profile(self) -> None:
+        name = self._profile_name_edit.text().strip()
+        if not name:
+            return
+        monitors = [
+            {"device_name": c.device_name,
+             "brightness":  c.sl_bri.value(),
+             "contrast":    c.sl_con.value()}
+            for c in self.cards
+        ]
+        gamma_values = {c.device_name: c.gamma_value for c in self.cards}
+        self._profile.save_named_profile(name, monitors, gamma_values)
+        self._profile_name_edit.clear()
+        self._refresh_named_profiles_list()
+
+    def _load_named_profile(self, name: str) -> None:
+        data = self._profile.load_named_profile(name)
+        if not data:
+            return
+        warmth = (self.night_warmth / 100.0) if self.night_mode_enabled else 0.0
+        for entry in data.get("monitors", []):
+            dev = entry.get("device_name")
+            bri = entry.get("brightness")
+            con = entry.get("contrast")
+            for c in self.cards:
+                if c.device_name == dev:
+                    self._sync_guard = True
+                    if bri is not None:
+                        c.sl_bri.setValue(bri)
+                    if con is not None:
+                        c.sl_con.setValue(con)
+                    self._sync_guard = False
+        for dev, gamma in data.get("gamma_values", {}).items():
+            for c in self.cards:
+                if c.device_name == dev:
+                    c.set_gamma_value(float(gamma))
+                    c.current_warmth = warmth
+
+    def _delete_named_profile(self, name: str) -> None:
+        self._profile.delete_named_profile(name)
+        self._refresh_named_profiles_list()
+
     def _build_settings_section(self) -> None:
         sec = _CollapsibleSection(_("PARAMÈTRES"), expanded=False)
 
@@ -539,6 +675,30 @@ class MainWindow(QWidget):
             lambda v: _startup.set_enabled(v)
         )
         sec.add_widget(self._chk_startup)
+
+        # B6 — Night mode
+        self._chk_night = QCheckBox(_("Activer le mode nuit"))
+        self._chk_night.setChecked(self.night_mode_enabled)
+        self._chk_night.toggled.connect(self._set_night_mode)
+        sec.add_widget(self._chk_night)
+
+        warmth_row = QHBoxLayout()
+        warmth_row.setSpacing(8)
+        lbl_warmth = QLabel(_("Chaleur"))
+        lbl_warmth.setObjectName("Subtle")
+        self.sl_warmth = QSlider(Qt.Horizontal)
+        self.sl_warmth.setObjectName("SliderWarmth")
+        self.sl_warmth.setRange(0, 100)
+        self.sl_warmth.setValue(self.night_warmth)
+        self.sl_warmth.setEnabled(self.night_mode_enabled)
+        self.lbl_warmth_val = QLabel(f"{self.night_warmth}%")
+        self.lbl_warmth_val.setObjectName("ValueBadge")
+        self.lbl_warmth_val.setFixedWidth(34)
+        self.sl_warmth.valueChanged.connect(self._set_night_warmth)
+        warmth_row.addWidget(lbl_warmth)
+        warmth_row.addWidget(self.sl_warmth, stretch=1)
+        warmth_row.addWidget(self.lbl_warmth_val)
+        sec.add_layout(warmth_row)
 
         self.main_l.addWidget(sec)
 
@@ -584,6 +744,17 @@ class MainWindow(QWidget):
         self._update_banner.setVisible(True)
         self.adjustSize()
 
+    # ── Window events ─────────────────────────────────────────────────────────
+
+    def showEvent(self, event) -> None:
+        super().showEvent(event)
+        self._fade_anim = QPropertyAnimation(self, b"windowOpacity", self)
+        self._fade_anim.setDuration(160)
+        self._fade_anim.setStartValue(0.0)
+        self._fade_anim.setEndValue(1.0)
+        self._fade_anim.setEasingCurve(QEasingCurve.OutCubic)
+        self._fade_anim.start()
+
     # ── Helper widgets ────────────────────────────────────────────────────────
 
     def _section_label(self, text: str) -> QLabel:
@@ -593,8 +764,8 @@ class MainWindow(QWidget):
 
     def _sep(self) -> QFrame:
         line = QFrame()
+        line.setObjectName("Separator")
         line.setFrameShape(QFrame.HLine)
-        line.setStyleSheet(f"background:{BORDER_COLOR}; max-height:1px; border:none;")
         return line
 
     # ─────────────────────────────────────────────────────────────────────────
@@ -649,6 +820,8 @@ class MainWindow(QWidget):
             "focus_enabled":         self.focus_enabled,
             "focus_dim":             self.focus_dim,
             "app_rules_enabled":     self.app_rules_enabled,
+            "night_mode_enabled":    self.night_mode_enabled,
+            "night_warmth":          self.night_warmth,
         })
         self._rule_mgr.save(self._rules)
         log.debug("Settings saved.")
@@ -679,8 +852,10 @@ class MainWindow(QWidget):
             log.warning("Monitor scan failed: %s", e)
             self.mon_l.addWidget(QLabel(_("Erreur lors du scan des écrans")))
 
-        # Apply saved per-monitor gamma values
+        # Apply saved per-monitor gamma values (with night warmth if active)
+        warmth = (self.night_warmth / 100.0) if self.night_mode_enabled else 0.0
         for c in self.cards:
+            c.current_warmth = warmth
             if c.device_name in self.gamma_values:
                 c.set_gamma_value(float(self.gamma_values[c.device_name]))
 
@@ -714,9 +889,10 @@ class MainWindow(QWidget):
         if hasattr(self, "_lbl_proc_detect"):
             if proc:
                 has_rule = any(r.enabled and r.process.lower() == proc for r in self._rules)
-                color = ACCENT_COLOR if has_rule else "#505050"
                 self._lbl_proc_detect.setText(_("Détecté : {}").format(proc))
-                self._lbl_proc_detect.setStyleSheet(f"font-size:10px; color:{color};")
+                self._lbl_proc_detect.setProperty("matched", "true" if has_rule else "false")
+                self._lbl_proc_detect.style().unpolish(self._lbl_proc_detect)
+                self._lbl_proc_detect.style().polish(self._lbl_proc_detect)
             else:
                 self._lbl_proc_detect.setText("")
 
@@ -823,14 +999,12 @@ class MainWindow(QWidget):
             return
         if rule:
             self._lbl_rule_status.setText(_("● {}").format(rule.label))
-            self._lbl_rule_status.setStyleSheet(
-                f"font-size:11px; color:{ACCENT_COLOR}; font-weight:600;"
-            )
+            self._lbl_rule_status.setProperty("active", "true")
         else:
             self._lbl_rule_status.setText(_("Aucune règle active"))
-            self._lbl_rule_status.setStyleSheet(
-                "font-size:11px; color:#606060;"
-            )
+            self._lbl_rule_status.setProperty("active", "false")
+        self._lbl_rule_status.style().unpolish(self._lbl_rule_status)
+        self._lbl_rule_status.style().polish(self._lbl_rule_status)
 
     def _set_app_rules_enabled(self, enabled: bool) -> None:
         self.app_rules_enabled = enabled
@@ -1095,6 +1269,33 @@ class MainWindow(QWidget):
         self.gamma_value = 1.0
         for c in self.cards:
             c.set_gamma_value(1.0)
+
+    def _preset_day(self) -> None:
+        self._set_glob(80)
+        if self.night_mode_enabled:
+            self._chk_night.setChecked(False)
+
+    def _preset_night(self) -> None:
+        self._set_glob(25)
+        if not self.night_mode_enabled:
+            self._chk_night.setChecked(True)
+
+    # ── Night mode ────────────────────────────────────────────────────────────
+
+    def _set_night_mode(self, enabled: bool) -> None:
+        self.night_mode_enabled = enabled
+        self.sl_warmth.setEnabled(enabled)
+        warmth = (self.night_warmth / 100.0) if enabled else 0.0
+        for c in self.cards:
+            c.set_warmth(warmth)
+
+    def _set_night_warmth(self, value: int) -> None:
+        self.night_warmth = value
+        self.lbl_warmth_val.setText(f"{value}%")
+        if self.night_mode_enabled:
+            warmth = value / 100.0
+            for c in self.cards:
+                c.set_warmth(warmth)
 
     def _export_gamma(self) -> None:
         from datetime import datetime
