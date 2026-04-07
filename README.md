@@ -126,7 +126,9 @@ Voir les [issues ouvertes](https://github.com/NicolasGounotEsiea/Lumina/issues) 
 **Backend (robustesse & nouvelles capacités)**
 
 - [x] B1 — Correspondance stable des moniteurs via `EnumDisplayMonitors`
-- [ ] B2 — Écritures DDC-CI non-bloquantes (worker QThread)
+- [x] B2 — Écritures DDC-CI non-bloquantes (worker QThread)
+  - [x] `_DDCWorker` sur `QThread` dédié par écran — bri/con/RGB/power asynchrones
+  - [x] Debounce 150 ms sur les sliders pour éviter le flood DDC-CI
 - [ ] B3 — Retry DDC-CI avec backoff exponentiel
 - [ ] B4 — Profils nommés multiples (save/load/delete)
 - [ ] B5 — Luminosité planifiée (règles horaires, lever/coucher)
@@ -160,6 +162,14 @@ Voir les [issues ouvertes](https://github.com/NicolasGounotEsiea/Lumina/issues) 
   - [x] Slider gamma dans chaque `MonitorCard` (GPU, indépendant DDC-CI)
   - [x] Persistance par écran dans `settings.json` (`gamma_values`)
   - [x] Slider global GAMMA GPU = raccourci « appliquer à tous »
+- [x] F9 — Refonte visuelle complète (v1.2.0)
+  - [x] Stylesheet thématisée dark/light avec variables CSS-like (`style.py`)
+  - [x] Sections collapsibles dans le panneau principal
+  - [x] Cartes avec dégradé de fond subtil
+  - [x] Sliders redessinés — rainure 4 px, poignée 14 px, remplissage couleur d'accentuation
+  - [x] Scrollbar transparente par défaut, visible au survol
+  - [x] `QToolTip` stylisé
+  - [x] Animation de fondu à l'ouverture de la fenêtre
 
 ---
 
@@ -171,8 +181,14 @@ Voir les [issues ouvertes](https://github.com/NicolasGounotEsiea/Lumina/issues) 
 
 ---
 
+## Changelog
+
+Voir [CHANGELOG.md](CHANGELOG.md) pour l'historique détaillé des versions.
+
+---
+
 ## Licence
 
 Propriétaire — voir [LICENSE](LICENSE).
-Tous droits réservés © 2024-2025 Nicolas Gounot.
+Tous droits réservés © 2024-2026 Nicolas Gounot.
 Usage personnel sur une machine par licence achetée. Redistribution et décompilation interdites.
