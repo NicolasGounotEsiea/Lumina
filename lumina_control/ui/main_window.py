@@ -11,8 +11,7 @@ from PySide6.QtWidgets import (
 )
 
 from lumina_control.config import (
-    ACCENT_COLOR, APP_NAME, APP_WIDTH,
-    BORDER_COLOR, WARM_COLOR,
+    ACCENT_COLOR, APP_NAME, APP_WIDTH, WARM_COLOR,
     get_named_profiles_path, get_profile_path, get_rules_path, get_settings_path,
 )
 from lumina_control.i18n import _

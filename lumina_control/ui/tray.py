@@ -5,7 +5,6 @@ from PySide6.QtCore import Qt, QRect
 from PySide6.QtGui import QAction, QColor, QFont, QIcon, QPainter, QPixmap
 from PySide6.QtWidgets import QMenu, QSystemTrayIcon
 
-from lumina_control.config import ACCENT_COLOR
 from lumina_control.i18n import _
 from lumina_control.ui.main_window import MainWindow
 

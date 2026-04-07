@@ -30,7 +30,6 @@ def get_stylesheet(dark: bool = True) -> str:
         hdr_hover  = "rgba(255,255,255,0.04)"
         hdr_check  = "rgba(255,255,255,0.07)"
         scroll_h   = "#606060"
-        sl_start   = ad          # slider gradient start
         sl_handle  = txt         # slider handle fill
         card_top   = chov        # card gradient top
     else:
@@ -53,7 +52,6 @@ def get_stylesheet(dark: bool = True) -> str:
         hdr_hover  = "rgba(0,0,0,0.05)"
         hdr_check  = "rgba(0,0,0,0.08)"
         scroll_h   = "#A8A8A8"
-        sl_start   = "#90BEE8"   # bleu pastel doux pour le début du dégradé
         sl_handle  = "#FFFFFF"   # handle blanc en mode clair
         card_top   = "#FFFFFF"   # légère surbrillance en haut des cartes
 

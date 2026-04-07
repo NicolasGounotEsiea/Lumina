@@ -6,7 +6,6 @@ from PySide6.QtWidgets import (
     QFrame, QHBoxLayout, QLabel, QPushButton, QSlider, QVBoxLayout,
 )
 
-from lumina_control.config import ACCENT_COLOR
 from lumina_control.i18n import _
 from lumina_control.utils import set_device_gamma, wake_all_monitors
 from lumina_control.monitor_enumerate import MonitorDescriptor
