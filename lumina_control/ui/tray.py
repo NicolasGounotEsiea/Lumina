@@ -91,4 +91,4 @@ class Tray:
         icon = _make_brightness_icon(self._icon_path, brightness)
         self.tray.setIcon(icon)
         self.tray.setToolTip(f"Lumina Control  —  {brightness}%")
-        self.app.setWindowIcon(icon)
+        self.window.setWindowIcon(icon)

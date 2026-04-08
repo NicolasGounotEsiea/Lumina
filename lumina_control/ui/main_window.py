@@ -83,7 +83,7 @@ class MainWindow(QWidget):
         super().__init__()
         self.setWindowTitle(APP_NAME)
         self.setObjectName("MainWindow")
-        self.setWindowFlags(Qt.FramelessWindowHint | Qt.Tool | Qt.WindowStaysOnTopHint)
+        self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
         self.setAttribute(Qt.WA_TranslucentBackground)
         self.setFixedWidth(APP_WIDTH)
 
@@ -745,6 +745,9 @@ class MainWindow(QWidget):
         self.adjustSize()
 
     # ── Window events ─────────────────────────────────────────────────────────
+
+    def paintEvent(self, event) -> None:
+        pass  # Fully transparent root; Container handles its own background
 
     def showEvent(self, event) -> None:
         super().showEvent(event)

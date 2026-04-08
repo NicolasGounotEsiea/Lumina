@@ -70,7 +70,7 @@ QWidget {{
 }}
 
 QWidget#MainWindow {{
-    background: transparent;
+    background-color: transparent;
 }}
 
 /* ═══════════════════════════════════════════════════════════════════════════
