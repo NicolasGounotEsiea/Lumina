@@ -82,6 +82,7 @@ class MainWindow(QWidget):
     def __init__(self) -> None:
         super().__init__()
         self.setWindowTitle(APP_NAME)
+        self.setObjectName("MainWindow")
         self.setWindowFlags(Qt.FramelessWindowHint | Qt.Tool | Qt.WindowStaysOnTopHint)
         self.setAttribute(Qt.WA_TranslucentBackground)
         self.setFixedWidth(APP_WIDTH)

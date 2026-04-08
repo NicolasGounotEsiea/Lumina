@@ -88,5 +88,7 @@ class Tray:
             self.window.toggle()
 
     def _update_icon(self, brightness: int) -> None:
-        self.tray.setIcon(_make_brightness_icon(self._icon_path, brightness))
+        icon = _make_brightness_icon(self._icon_path, brightness)
+        self.tray.setIcon(icon)
         self.tray.setToolTip(f"Lumina Control  —  {brightness}%")
+        self.app.setWindowIcon(icon)
