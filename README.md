@@ -1,6 +1,6 @@
 # Lumina Control
 
-> Contrôle multi-écrans DDC-CI depuis la barre des tâches Windows — luminosité, contraste, calibrage RGB et correction gamma, le tout sans driver tiers.
+> Contrôle multi-écrans DDC-CI depuis la barre des tâches Windows — luminosité, contraste, calibrage RGB, correction gamma et mode jeu automatique, le tout sans driver tiers.
 
 ---
 
@@ -12,6 +12,7 @@
 | **Gamma** | Correction GPU indépendante via `SetDeviceGammaRamp` (gdi32) |
 | **Sync** | Mode maître/esclave absolu ou avec décalage relatif par écran |
 | **Focus** | Détection de la fenêtre active (win32api) ; assombrit les écrans inactifs |
+| **Mode Jeu** | Détection plein écran automatique (`GetMonitorInfoW`) ; applique un préréglage bri/con, suspend les écritures DDC-CI pendant la session, thème rouge dans l'UI |
 | **Profils par app** | Règles automatiques déclenchées par l'application en focus (500 ms) — luminosité, contraste, gamma, gains RVB ; s'applique uniquement sur l'écran contenant la fenêtre |
 | **Colorimétrie** | Gains R/V/B DDC-CI par règle d'application, avec aperçu swatch en direct |
 | **Calibrage** | Dialog RGB par écran + assistant guidé en 6 étapes avec patterns plein écran |
@@ -59,12 +60,12 @@ Lumina/
 ├── lumina_control/
 │   ├── __main__.py              # Entrée principale, guard single-instance
 │   ├── config.py                # Constantes couleur, chemins AppData
-│   ├── style.py                 # STYLESHEET Qt complet (dark theme)
+│   ├── style.py                 # Stylesheet Qt dark/light + variante gaming (rouge)
 │   ├── i18n.py                  # Internationalisation — fonction _(), FR/EN
 │   ├── startup.py               # Démarrage Windows — registre HKCU Run (F6)
 │   ├── updater.py               # Vérif. GitHub Releases en arrière-plan (B10)
 │   ├── profiles.py              # ProfileManager — snapshots & settings JSON
-│   ├── utils.py                 # Gamma (gdi32), wake monitors, active/foreground screen
+│   ├── utils.py                 # Gamma (gdi32), wake monitors, active/foreground screen, fullscreen detection
 │   ├── monitor_enumerate.py     # Énumération stable via EnumDisplayMonitors
 │   ├── app_rules.py             # AppRule dataclass + AppRuleManager (persistance JSON)
 │   └── ui/
@@ -83,7 +84,7 @@ Lumina/
 
 | Classe | Rôle |
 |---|---|
-| `MainWindow` | Panneau flottant. Gère les cards, sync, gamma, focus, paramètres. |
+| `MainWindow` | Panneau flottant. Gère les cards, sync, gamma, focus, mode jeu, paramètres. |
 | `MonitorCard` | Card par écran. Sliders bri/con, bouton power, ouverture calibrage. |
 | `CalibrationDialog` | Ajustement fin des gains RGB via DDC-CI. |
 | `CalibrationWizard` | Assistant 6 étapes intégrant `PatternWindow`. |
@@ -130,9 +131,20 @@ Voir les [issues ouvertes](https://github.com/NicolasGounotEsiea/Lumina/issues) 
   - [x] `_DDCWorker` sur `QThread` dédié par écran — bri/con/RGB/power asynchrones
   - [x] Debounce 150 ms sur les sliders pour éviter le flood DDC-CI
 - [ ] B3 — Retry DDC-CI avec backoff exponentiel
-- [ ] B4 — Profils nommés multiples (save/load/delete)
+- [x] B4 — Profils nommés multiples (save/load/delete)
+  - [x] Sauvegarde/restauration/suppression depuis le panneau principal
+  - [x] Persistance luminosité, contraste et gamma par écran dans `named_profiles.json`
 - [ ] B5 — Luminosité planifiée (règles horaires, lever/coucher)
-- [ ] B6 — Mode nuit / température de couleur (gamma warm tint)
+- [x] B6 — Mode nuit / température de couleur (gamma warm tint)
+  - [x] Slider de chaleur (0–100) combiné à la correction gamma via `SetDeviceGammaRamp`
+  - [x] Persistance dans `settings.json`
+- [x] B11 — Mode Jeu
+  - [x] Détection plein écran via comparaison rect fenêtre ↔ rect moniteur (`GetMonitorInfoW`)
+  - [x] Préréglage bri/con configurable appliqué à l'entrée en plein écran
+  - [x] Suspension des écritures DDC-CI pendant la session (pas d'interruption bus I²C)
+  - [x] Thème rouge complet dans l'UI dès l'activation du mode
+  - [x] Grise automatiquement les profils par application (conflit évité)
+  - [x] Entrée dans le menu tray synchronisée avec le panneau principal
 - [x] B7 — Règles par application (auto-dim/calibrage pour certains process)
   - [x] Détection foreground process 500 ms + garde de stabilité
   - [x] Luminosité, contraste, gamma, gains RVB DDC-CI par règle
