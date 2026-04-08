@@ -355,13 +355,15 @@ class MainWindow(QWidget):
     def _build_sync_section(self) -> None:
         sec = _CollapsibleSection(_("SYNCHRONISATION"), expanded=False)
 
+        # ── Row 1 : toggle + master picker ───────────────────────────────────
         h_sync = QHBoxLayout()
-        self.chk_sync = QCheckBox(_("Synchroniser les écrans"))
+        self.chk_sync = QCheckBox(_("Lier les écrans"))
         self.chk_sync.toggled.connect(self._set_sync_enabled)
         lbl_master = QLabel(_("Maître"))
         lbl_master.setObjectName("Subtle")
         self.cmb_master = QComboBox()
         self.cmb_master.setFixedWidth(120)
+        self.cmb_master.setToolTip(_("L'écran maître pilote les autres"))
         self.cmb_master.currentIndexChanged.connect(self._set_sync_master)
         h_sync.addWidget(self.chk_sync)
         h_sync.addStretch()
@@ -369,8 +371,14 @@ class MainWindow(QWidget):
         h_sync.addWidget(self.cmb_master)
         sec.add_layout(h_sync)
 
+        # ── Status badge ──────────────────────────────────────────────────────
+        self._lbl_sync_status = QLabel("")
+        self._lbl_sync_status.setObjectName("SyncStatus")
+        sec.add_widget(self._lbl_sync_status)
+
+        # ── Row 2 : options (RGB + sync now) ─────────────────────────────────
         h2 = QHBoxLayout()
-        self.chk_sync_rgb = QCheckBox(_("Gains RGB"))
+        self.chk_sync_rgb = QCheckBox(_("Couleurs RGB"))
         self.chk_sync_rgb.toggled.connect(self._set_sync_rgb_enabled)
         self.btn_sync_now = QPushButton(_("Sync maintenant"))
         self.btn_sync_now.setProperty("class", "pill-muted")
@@ -381,23 +389,28 @@ class MainWindow(QWidget):
         h2.addWidget(self.btn_sync_now)
         sec.add_layout(h2)
 
+        # ── Row 3 : relative offset toggle ───────────────────────────────────
         h3 = QHBoxLayout()
-        self.chk_sync_relative = QCheckBox(_("Décalages relatifs"))
+        self.chk_sync_relative = QCheckBox(_("Décalage permanent"))
+        self.chk_sync_relative.setToolTip(
+            _("Maintient un écart fixe de luminosité et contraste entre le maître et les autres écrans")
+        )
         self.chk_sync_relative.toggled.connect(self._set_sync_relative_enabled)
         h3.addWidget(self.chk_sync_relative)
         h3.addStretch()
         sec.add_layout(h3)
 
+        # ── Offset sliders ────────────────────────────────────────────────────
         for attr, label, lo, hi, lbl_attr, slot_fn in [
-            ("sl_sync_bri", _("Offset lum."), -40, 40,
+            ("sl_sync_bri", _("Lum. secondaires"), -40, 40,
              "lbl_sync_bri_val", self._update_sync_bri_label),
-            ("sl_sync_con", _("Offset con."), -40, 40,
+            ("sl_sync_con", _("Con. secondaires"), -40, 40,
              "lbl_sync_con_val", self._update_sync_con_label),
         ]:
             row = QHBoxLayout()
             lbl = QLabel(label)
             lbl.setObjectName("Subtle")
-            lbl.setFixedWidth(72)
+            lbl.setFixedWidth(104)
             sl = QSlider(Qt.Horizontal)
             sl.setRange(lo, hi)
             sl.setValue(0)
@@ -1340,6 +1353,21 @@ class MainWindow(QWidget):
         self.sl_sync_bri.setEnabled(rel)
         self.sl_sync_con.setEnabled(rel)
 
+        # Status badge
+        if not enabled:
+            self._lbl_sync_status.setText("")
+            self._lbl_sync_status.setProperty("state", "")
+        elif self.focus_enabled:
+            self._lbl_sync_status.setText(_("⚠ Suspendu — Mode Focus actif"))
+            self._lbl_sync_status.setProperty("state", "warning")
+        else:
+            n = sum(1 for c in self.cards
+                    if c.device_name != self.sync_master_device and c.isEnabled())
+            self._lbl_sync_status.setText(_("Actif — {} écran(s) lié(s)").format(n))
+            self._lbl_sync_status.setProperty("state", "active")
+        self._lbl_sync_status.style().unpolish(self._lbl_sync_status)
+        self._lbl_sync_status.style().polish(self._lbl_sync_status)
+
     def _set_sync_enabled(self, enabled: bool) -> None:
         self.sync_enabled = enabled
         self._update_sync_ui()
@@ -1560,6 +1588,7 @@ class MainWindow(QWidget):
             self._apply_focus(force=True)
         else:
             self._restore_pre_focus()
+        self._update_sync_ui()
 
     def _restore_pre_focus(self) -> None:
         if not self.pre_focus_values:

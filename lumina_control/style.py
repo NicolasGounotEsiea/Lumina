@@ -261,6 +261,18 @@ QLabel#ProcDetect[matched="true"] {{
     color: {ac};
 }}
 
+QLabel#SyncStatus {{
+    font-size: 11px;
+    color: {mute};
+}}
+QLabel#SyncStatus[state="active"] {{
+    color: {ac};
+    font-weight: 600;
+}}
+QLabel#SyncStatus[state="warning"] {{
+    color: {dang};
+}}
+
 QFrame#Separator {{
     background: {bord};
     max-height: 1px;
