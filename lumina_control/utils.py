@@ -185,8 +185,19 @@ def get_foreground_window_monitor() -> str | None:
         return None
 
 
+_GWL_STYLE   = -16
+_WS_CAPTION  = 0x00C00000   # window has a title bar → regular app, not a game
+_WS_MAXIMIZE = 0x01000000   # maximized window → not exclusive/borderless fullscreen
+
+
 def is_fullscreen_foreground() -> bool:
-    """Return True if the foreground window occupies its monitor entirely."""
+    """Return True if the foreground window occupies its monitor entirely.
+
+    Filters out regular maximized apps (browser, explorer…) by checking that
+    the window has no title bar (WS_CAPTION) and is not simply maximized
+    (WS_MAXIMIZE).  True fullscreen and borderless-windowed games use WS_POPUP
+    without a caption, so they pass through correctly.
+    """
     try:
         hwnd = win32gui.GetForegroundWindow()
         if not hwnd:
@@ -194,6 +205,11 @@ def is_fullscreen_foreground() -> bool:
         cls = win32gui.GetClassName(hwnd)
         if cls in ("Shell_TrayWnd", "WorkerW", "Progman", "Button"):
             return False
+        style = ctypes.windll.user32.GetWindowLongW(hwnd, _GWL_STYLE)
+        if style & _WS_CAPTION:
+            return False   # has a title bar → not a game
+        if style & _WS_MAXIMIZE:
+            return False   # maximized window → not exclusive/borderless fullscreen
         r = win32gui.GetWindowRect(hwnd)
         MONITOR_DEFAULTTONEAREST = 2
         hmon = ctypes.windll.user32.MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST)
