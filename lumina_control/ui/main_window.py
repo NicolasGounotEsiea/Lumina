@@ -85,6 +85,7 @@ class MainWindow(QWidget):
         self.setObjectName("MainWindow")
         self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
         self.setAttribute(Qt.WA_TranslucentBackground)
+        self.setAttribute(Qt.WA_NoSystemBackground)  # prevent WM_ERASEBKGND fill
         self.setFixedWidth(APP_WIDTH)
 
         self._profile = ProfileManager(
@@ -751,6 +752,18 @@ class MainWindow(QWidget):
 
     def showEvent(self, event) -> None:
         super().showEvent(event)
+        # Remove the 1-px DWM border glow Windows 11 adds to non-Tool windows
+        try:
+            import ctypes
+            _DWMWA_BORDER_COLOR = 34
+            _DWMWA_COLOR_NONE   = 0xFFFFFFFE
+            ctypes.windll.dwmapi.DwmSetWindowAttribute(
+                int(self.winId()), _DWMWA_BORDER_COLOR,
+                ctypes.byref(ctypes.c_int(_DWMWA_COLOR_NONE)),
+                ctypes.sizeof(ctypes.c_int),
+            )
+        except Exception:
+            pass
         self._fade_anim = QPropertyAnimation(self, b"windowOpacity", self)
         self._fade_anim.setDuration(160)
         self._fade_anim.setStartValue(0.0)
