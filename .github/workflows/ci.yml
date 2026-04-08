@@ -117,19 +117,36 @@ jobs:
           name: LuminaControlSetup
           path: dist-installer
 
+      - name: Extract changelog for this version
+        shell: python
+        run: |
+          import re, os, sys
+          tag     = os.environ["GITHUB_REF_NAME"]          # e.g. "v1.2.0"
+          version = tag.lstrip("v")                        # e.g. "1.2.0"
+          text    = open("CHANGELOG.md", encoding="utf-8").read()
+          # Grab the block between this version header and the next "## [" header
+          pattern = rf"## \[{re.escape(version)}\][^\n]*\n(.*?)(?=\n## \[|\Z)"
+          m = re.search(pattern, text, re.DOTALL)
+          if not m:
+              print(f"Version {version} not found in CHANGELOG.md")
+              sys.exit(1)
+          notes = m.group(1).strip()
+          header = (
+              f"## Lumina Control {tag}\n\n"
+              "### Installation\n"
+              "Télécharge et exécute **LuminaControlSetup.exe**.\n"
+              "Nécessite Windows 10/11 et des écrans compatibles DDC-CI.\n\n"
+              "---\n\n"
+          )
+          with open("release_notes.md", "w", encoding="utf-8") as f:
+              f.write(header + notes)
+          print("Release notes written.")
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           name: "Lumina Control ${{ github.ref_name }}"
-          body: |
-            ## Lumina Control ${{ github.ref_name }}
-
-            ### Installation
-            Télécharge et exécute **LuminaControlSetup.exe**.
-            Nécessite Windows 10/11 et des écrans compatibles DDC-CI.
-
-            ### Changelog
-            Voir les [commits](${{ github.server_url }}/${{ github.repository }}/commits/${{ github.ref_name }}) pour le détail des changements.
+          body_path: release_notes.md
           files: dist-installer\LuminaControlSetup.exe
           fail_on_unmatched_files: true
           generate_release_notes: false
