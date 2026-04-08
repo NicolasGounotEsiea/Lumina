@@ -160,9 +160,11 @@ Voir les [issues ouvertes](https://github.com/NicolasGounotEsiea/Lumina/issues) 
 **Frontend (UX & confort)**
 
 - [ ] F1 — Noms d'écrans personnalisables
-- [ ] F2 — UI de gestion des profils (liste, renommer, supprimer)
+- [x] F2 — UI de gestion des profils (liste, renommer, supprimer)
+  - [x] Inclus dans B4 — liste avec chargement et suppression dans le panneau principal
 - [ ] F3 — Raccourcis clavier in-app
-- [ ] F4 — Infobulle tray avec luminosité courante
+- [x] F4 — Infobulle tray avec luminosité courante
+  - [x] `tray.setToolTip(f"Lumina Control — {brightness}%")` mis à jour à chaque changement
 - [ ] F5 — Notifications toast (save/restore confirmé)
 - [x] F6 — Lancement au démarrage Windows (registre)
   - [x] `lumina_control/startup.py` — lecture/écriture `HKCU\...\Run`
