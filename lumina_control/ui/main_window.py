@@ -137,8 +137,13 @@ class MainWindow(QWidget):
         self.focus_action                    = None  # QAction from tray
         self.gaming_action                   = None  # QAction from tray
         self._gaming_active:      bool              = False
+        self._gaming_fs_ticks:    int               = 0
         self._pre_gaming_bri:     dict[int, int]    = {}
         self._pre_gaming_con:     dict[int, int]    = {}
+        self._gaming_exit_timer                     = QTimer(self)
+        self._gaming_exit_timer.setSingleShot(True)
+        self._gaming_exit_timer.setInterval(2000)
+        self._gaming_exit_timer.timeout.connect(self._exit_gaming_mode)
 
         self._build_ui()
         self._apply_loaded_settings()
@@ -752,7 +757,22 @@ class MainWindow(QWidget):
         warmth_row.addWidget(self.lbl_warmth_val)
         sec.add_layout(warmth_row)
 
+        sep = QFrame()
+        sep.setObjectName("Separator")
+        sep.setFrameShape(QFrame.HLine)
+        sec.add_widget(sep)
+
+        btn_onboarding = QPushButton(_("Assistant de démarrage…"))
+        btn_onboarding.setProperty("class", "pill-muted")
+        btn_onboarding.setCursor(Qt.PointingHandCursor)
+        btn_onboarding.clicked.connect(self._show_onboarding)
+        sec.add_widget(btn_onboarding)
+
         self.main_l.addWidget(sec)
+
+    def _show_onboarding(self) -> None:
+        from lumina_control.ui.onboarding import OnboardingDialog
+        OnboardingDialog(self).exec()
 
     def _make_update_banner(self) -> QWidget:
         """Create the update-available banner (hidden by default)."""
@@ -1133,8 +1153,11 @@ class MainWindow(QWidget):
             self.gaming_action.blockSignals(False)
         self._apply_gaming_visual(enabled)
         self._update_gaming_ui(enabled)
-        if not enabled and self._gaming_active:
-            self._exit_gaming_mode()
+        if not enabled:
+            self._gaming_fs_ticks = 0
+            self._gaming_exit_timer.stop()
+            if self._gaming_active:
+                self._exit_gaming_mode()
 
     def _update_gaming_ui(self, gaming_on: bool) -> None:
         """Grey out controls that gaming mode overrides."""
@@ -1146,12 +1169,20 @@ class MainWindow(QWidget):
         else:
             self._chk_app_rules.setToolTip("")
 
+    _GAMING_ENTRY_TICKS = 2  # ~1 s at 500 ms poll before entering
+
     def _check_gaming_mode(self) -> None:
         fullscreen = is_fullscreen_foreground()
-        if fullscreen and not self._gaming_active:
-            self._enter_gaming_mode()
-        elif not fullscreen and self._gaming_active:
-            self._exit_gaming_mode()
+        if fullscreen:
+            self._gaming_exit_timer.stop()       # cancel any pending exit
+            if not self._gaming_active:
+                self._gaming_fs_ticks += 1
+                if self._gaming_fs_ticks >= self._GAMING_ENTRY_TICKS:
+                    self._enter_gaming_mode()
+        else:
+            self._gaming_fs_ticks = 0
+            if self._gaming_active and not self._gaming_exit_timer.isActive():
+                self._gaming_exit_timer.start()  # exit after 2 s of non-fullscreen
 
     def _apply_gaming_visual(self, active: bool) -> None:
         from lumina_control.style import get_stylesheet

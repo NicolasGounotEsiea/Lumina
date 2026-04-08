@@ -134,6 +134,53 @@ _EN: dict[str, str] = {
     "Charger":                          "Load",
     "Aucun profil sauvegardé":          "No saved profiles",
 
+    # ── onboarding ───────────────────────────────────────────────────────────
+    "Bienvenue dans Lumina Control":    "Welcome to Lumina Control",
+    "Contrôlez la luminosité, le contraste et la colorimétrie "
+    "de vos écrans directement depuis la barre des tâches — "
+    "sans driver tiers, via le protocole DDC-CI.\n\n"
+    "Cet assistant va vérifier la compatibilité de vos écrans "
+    "et vous présenter les fonctionnalités clés.":
+        "Control the brightness, contrast and colorimetry of your monitors "
+        "directly from the taskbar — no third-party driver, via the DDC-CI protocol.\n\n"
+        "This wizard will check your monitor compatibility "
+        "and walk you through the key features.",
+    "Détection DDC-CI":                 "DDC-CI Detection",
+    "DDC-CI est le protocole qui permet de contrôler vos écrans. "
+    "Il doit être activé dans le menu OSD (boutons physiques) de chaque moniteur.":
+        "DDC-CI is the protocol used to control your monitors. "
+        "It must be enabled in the OSD menu (physical buttons) of each monitor.",
+    "Scan en cours…":                   "Scanning…",
+    "Si un écran est marqué indisponible :\n"
+    "  1. Appuyez sur le bouton physique de votre moniteur\n"
+    "  2. Cherchez « DDC/CI » dans le menu et activez-le\n"
+    "  3. Rafraîchissez les écrans depuis le panneau principal":
+        "If a monitor is marked unavailable:\n"
+        "  1. Press the physical button on your monitor\n"
+        "  2. Find « DDC/CI » in the menu and enable it\n"
+        "  3. Refresh monitors from the main panel",
+    "Fonctionnalités clés":             "Key features",
+    "Contrôlez chaque écran individuellement ou synchronisez-les en maître/esclave avec décalages relatifs.":
+        "Control each monitor individually or sync them in master/slave mode with relative offsets.",
+    "Préréglage automatique dès qu'une application spécifique est au premier plan — luminosité, contraste, gamma, gains RGB.":
+        "Automatic preset when a specific application is in focus — brightness, contrast, gamma, RGB gains.",
+    "Détection automatique du plein écran : préréglage appliqué et écritures DDC-CI suspendues pour ne pas interrompre le jeu.":
+        "Automatic fullscreen detection: preset applied and DDC-CI writes suspended to avoid interrupting the game.",
+    "Tout est prêt !":                  "All set!",
+    "Lumina Control est actif dans la barre des tâches.\n"
+    "Cliquez sur l'icône pour ouvrir le panneau de contrôle.\n\n"
+    "Vous pouvez relancer cet assistant à tout moment depuis\n"
+    "la section Paramètres du panneau.":
+        "Lumina Control is active in the taskbar.\n"
+        "Click the icon to open the control panel.\n\n"
+        "You can relaunch this wizard at any time from\n"
+        "the Settings section of the panel.",
+    "Aucun écran détecté.":             "No monitors detected.",
+    "{} écran(s) détecté(s) :":         "{} monitor(s) detected:",
+    "DDC-CI indisponible":              "DDC-CI unavailable",
+    "Scan impossible : {}":             "Scan failed: {}",
+    "Assistant de démarrage…":          "Setup wizard…",
+
     # ── gaming mode ──────────────────────────────────────────────────────────
     "Mode Jeu":                         "Gaming mode",
     "MODE JEU":                         "GAMING MODE",

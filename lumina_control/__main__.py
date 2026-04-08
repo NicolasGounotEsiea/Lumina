@@ -75,8 +75,17 @@ def main() -> None:
 
     icon_path = _resolve_icon()
 
+    # Detect first run before creating the tray (which writes settings)
+    from lumina_control.config import get_settings_path
+    _first_run = not os.path.exists(get_settings_path())
+
     from lumina_control.ui.tray import Tray
     tray = Tray(app, icon_path)
+
+    if _first_run:
+        from lumina_control.ui.onboarding import OnboardingDialog
+        from PySide6.QtCore import QTimer as _OTimer
+        _OTimer.singleShot(600, lambda: OnboardingDialog(tray.window).exec())
 
     # Save settings and reset gamma on clean exit
     app.aboutToQuit.connect(tray.window.save_settings)

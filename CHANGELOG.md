@@ -15,6 +15,8 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/).
 - Section **MODE JEU** dans le panneau principal (collapsible) avec toggle activer/désactiver et sliders de luminosité/contraste cibles.
 - Entrée **Mode Jeu** dans le menu contextuel du tray (case à cocher synchronisée avec le panneau).
 - La section **Profils par application** est grisée automatiquement quand le mode jeu est actif (tooltip explicatif).
+- **Robustesse du mode jeu** : garde d'entrée (2 polls consécutifs ~1 s) + sortie différée (2 s) pour éviter les faux positifs et le flickering lors des chargements.
+- **Assistant de démarrage** (onboarding) : dialog 4 étapes au premier lancement — bienvenue, scan DDC-CI avec résultats par écran, présentation des fonctionnalités clés, confirmation. Accessible à tout moment via Paramètres → *Assistant de démarrage…*
 
 ---
 
