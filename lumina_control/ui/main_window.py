@@ -21,7 +21,8 @@ from lumina_control import startup as _startup
 from lumina_control.updater import UpdateChecker
 from lumina_control.utils import (
     get_active_screen_index, get_foreground_process,
-    get_foreground_window_monitor, invalidate_monitors_cache, wake_all_monitors,
+    get_foreground_window_monitor, invalidate_monitors_cache,
+    is_fullscreen_foreground, wake_all_monitors,
 )
 from lumina_control.monitor_enumerate import enumerate_monitors
 from lumina_control.ui.monitor_card import MonitorCard
@@ -108,6 +109,9 @@ class MainWindow(QWidget):
         self.app_rules_enabled     = s["app_rules_enabled"]
         self.night_mode_enabled    = s["night_mode_enabled"]
         self.night_warmth          = s["night_warmth"]
+        self.gaming_enabled        = s["gaming_enabled"]
+        self.gaming_brightness     = s["gaming_brightness"]
+        self.gaming_contrast       = s["gaming_contrast"]
 
         # App rules engine
         self._rule_mgr        = AppRuleManager(get_rules_path())
@@ -131,6 +135,10 @@ class MainWindow(QWidget):
         self._last_focus_target:  int | None = None
         self._last_focus_dim:     int | None = None
         self.focus_action                    = None  # QAction from tray
+        self.gaming_action                   = None  # QAction from tray
+        self._gaming_active:      bool              = False
+        self._pre_gaming_bri:     dict[int, int]    = {}
+        self._pre_gaming_con:     dict[int, int]    = {}
 
         self._build_ui()
         self._apply_loaded_settings()
@@ -252,6 +260,7 @@ class MainWindow(QWidget):
         self._build_sync_section()
         self._build_gamma_section()
         self._build_focus_section()
+        self._build_gaming_section()
         self._build_snapshot_section()
 
         self.main_l.addWidget(self._sep())
@@ -300,6 +309,7 @@ class MainWindow(QWidget):
         self.sl_glob.valueChanged.connect(self.brightness_changed)
         sl.addWidget(self.sl_glob)
 
+        self._brightness_strip = strip
         self.main_l.addWidget(strip)
 
     def _build_quick_section(self) -> None:
@@ -477,6 +487,47 @@ class MainWindow(QWidget):
         row.addWidget(self.sl_focus_dim)
         row.addWidget(self.lbl_focus_dim)
         sec.add_layout(row)
+
+        self.main_l.addWidget(sec)
+
+    def _build_gaming_section(self) -> None:
+        sec = _CollapsibleSection(_("MODE JEU"), expanded=False)
+
+        h = QHBoxLayout()
+        lbl_help = QLabel(_("Préréglage auto quand un jeu est en plein écran."))
+        lbl_help.setObjectName("Subtle")
+        self.btn_gaming = QPushButton(_("Désactivé"))
+        self.btn_gaming.setObjectName("GamingToggle")
+        self.btn_gaming.setCheckable(True)
+        self.btn_gaming.setCursor(Qt.PointingHandCursor)
+        self.btn_gaming.toggled.connect(lambda v: self.set_gaming_mode_enabled(v, source="ui"))
+        h.addWidget(lbl_help)
+        h.addStretch()
+        h.addWidget(self.btn_gaming)
+        sec.add_layout(h)
+
+        for attr, label, default, slot in [
+            ("sl_gaming_bri", _("Lum. jeu"), self.gaming_brightness, self._on_gaming_bri_changed),
+            ("sl_gaming_con", _("Con. jeu"), self.gaming_contrast,   self._on_gaming_con_changed),
+        ]:
+            row = QHBoxLayout()
+            lbl = QLabel(label)
+            lbl.setObjectName("Subtle")
+            lbl.setFixedWidth(76)
+            sl = QSlider(Qt.Horizontal)
+            sl.setRange(0, 100)
+            sl.setValue(default)
+            sl.sliderReleased.connect(slot)
+            val_lbl = QLabel(f"{default}%")
+            val_lbl.setObjectName("ValueBadge")
+            val_lbl.setFixedWidth(40)
+            val_lbl.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+            sl.valueChanged.connect(lambda v, lbl=val_lbl: lbl.setText(f"{v}%"))
+            row.addWidget(lbl)
+            row.addWidget(sl)
+            row.addWidget(val_lbl)
+            sec.add_layout(row)
+            setattr(self, attr, sl)
 
         self.main_l.addWidget(sec)
 
@@ -821,6 +872,14 @@ class MainWindow(QWidget):
             self.btn_focus.setText(_("Activé"))
             self.btn_focus.blockSignals(False)
 
+        if self.gaming_enabled:
+            self.btn_gaming.blockSignals(True)
+            self.btn_gaming.setChecked(True)
+            self.btn_gaming.setText(_("Activé"))
+            self.btn_gaming.blockSignals(False)
+            self._apply_gaming_visual(True)
+            self._update_gaming_ui(True)
+
     def save_settings(self) -> None:
         """Persist current UI state to disk (called on app exit)."""
         self._profile.save_settings({
@@ -838,6 +897,9 @@ class MainWindow(QWidget):
             "app_rules_enabled":     self.app_rules_enabled,
             "night_mode_enabled":    self.night_mode_enabled,
             "night_warmth":          self.night_warmth,
+            "gaming_enabled":        self.gaming_enabled,
+            "gaming_brightness":     self.gaming_brightness,
+            "gaming_contrast":       self.gaming_contrast,
         })
         self._rule_mgr.save(self._rules)
         log.debug("Settings saved.")
@@ -890,7 +952,9 @@ class MainWindow(QWidget):
             for c in self.cards:
                 c.set_active(c.index == idx)
         self._apply_focus(active_idx=idx)
-        if self.app_rules_enabled and not self.focus_enabled:
+        if self.gaming_enabled or self._gaming_active:
+            self._check_gaming_mode()
+        if self.app_rules_enabled and not self.focus_enabled and not self._gaming_active:
             self._check_app_rules()
 
     # ─────────────────────────────────────────────────────────────────────────
@@ -1048,6 +1112,93 @@ class MainWindow(QWidget):
         self._active_rule = None
         self._rule_candidate = None
         self._rule_ticks = 0
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Gaming mode
+    # ─────────────────────────────────────────────────────────────────────────
+
+    def register_gaming_action(self, action) -> None:
+        self.gaming_action = action
+
+    def set_gaming_mode_enabled(self, enabled: bool, source: str = "ui") -> None:
+        self.gaming_enabled = enabled
+        if source != "ui":
+            self.btn_gaming.blockSignals(True)
+            self.btn_gaming.setChecked(enabled)
+            self.btn_gaming.blockSignals(False)
+        self.btn_gaming.setText(_("Activé") if enabled else _("Désactivé"))
+        if self.gaming_action and self.gaming_action.isChecked() != enabled:
+            self.gaming_action.blockSignals(True)
+            self.gaming_action.setChecked(enabled)
+            self.gaming_action.blockSignals(False)
+        self._apply_gaming_visual(enabled)
+        self._update_gaming_ui(enabled)
+        if not enabled and self._gaming_active:
+            self._exit_gaming_mode()
+
+    def _update_gaming_ui(self, gaming_on: bool) -> None:
+        """Grey out controls that gaming mode overrides."""
+        self._chk_app_rules.setEnabled(not gaming_on)
+        if gaming_on:
+            self._chk_app_rules.setToolTip(
+                _("Désactivé pendant le mode jeu")
+            )
+        else:
+            self._chk_app_rules.setToolTip("")
+
+    def _check_gaming_mode(self) -> None:
+        fullscreen = is_fullscreen_foreground()
+        if fullscreen and not self._gaming_active:
+            self._enter_gaming_mode()
+        elif not fullscreen and self._gaming_active:
+            self._exit_gaming_mode()
+
+    def _apply_gaming_visual(self, active: bool) -> None:
+        from lumina_control.style import get_stylesheet
+        from lumina_control.utils import is_windows_dark_mode
+        QApplication.instance().setStyleSheet(
+            get_stylesheet(dark=is_windows_dark_mode(), gaming=active)
+        )
+
+    def _enter_gaming_mode(self) -> None:
+        self._gaming_active = True
+        # Save current slider values
+        self._pre_gaming_bri = {c.index: c.sl_bri.value() for c in self.cards if c.isEnabled()}
+        self._pre_gaming_con = {c.index: c.sl_con.value() for c in self.cards if c.isEnabled()}
+        # Apply gaming preset, then suspend DDC to avoid mid-game interruptions
+        for c in self.cards:
+            if c.isEnabled():
+                c.apply_rule_values(self.gaming_brightness, self.gaming_contrast)
+        QTimer.singleShot(300, self._suspend_ddc_all)
+        log.debug("Gaming mode: entered (bri=%d con=%d)", self.gaming_brightness, self.gaming_contrast)
+
+    def _suspend_ddc_all(self) -> None:
+        for c in self.cards:
+            if c.isEnabled():
+                c.set_ddc_suspended(True)
+
+    def _exit_gaming_mode(self) -> None:
+        self._gaming_active = False
+        # Resume DDC first so restore writes go through
+        for c in self.cards:
+            if c.isEnabled():
+                c.set_ddc_suspended(False)
+        # Restore pre-gaming values
+        for c in self.cards:
+            if c.isEnabled():
+                bri = self._pre_gaming_bri.get(c.index)
+                con = self._pre_gaming_con.get(c.index)
+                if bri is not None or con is not None:
+                    c.apply_rule_values(bri, con)
+        self._pre_gaming_bri.clear()
+        self._pre_gaming_con.clear()
+        log.debug("Gaming mode: exited, restored previous brightness/contrast")
+
+    def _on_gaming_bri_changed(self) -> None:
+        self.gaming_brightness = self.sl_gaming_bri.value()
+
+    def _on_gaming_con_changed(self) -> None:
+        self.gaming_contrast = self.sl_gaming_con.value()
 
     # ─────────────────────────────────────────────────────────────────────────
     # Global brightness

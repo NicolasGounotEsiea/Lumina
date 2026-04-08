@@ -137,6 +137,13 @@ class Tray:
         )
         menu.addAction(self.act_focus)
 
+        self.act_gaming = QAction(_("Mode Jeu"), menu)
+        self.act_gaming.setCheckable(True)
+        self.act_gaming.toggled.connect(
+            lambda v: self.window.set_gaming_mode_enabled(v, source="menu")
+        )
+        menu.addAction(self.act_gaming)
+
         menu.addAction(_("Sauver l'instantané"),    self.window.save_snapshot)
         menu.addAction(_("Restaurer l'instantané"), self.window.restore_snapshot)
         menu.addSeparator()
@@ -147,6 +154,7 @@ class Tray:
         self.tray.show()
 
         self.window.register_focus_action(self.act_focus)
+        self.window.register_gaming_action(self.act_gaming)
         self.window.brightness_changed.connect(self._update_icon)
         self._update_icon(self.window.sl_glob.value())
 

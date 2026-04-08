@@ -134,6 +134,15 @@ _EN: dict[str, str] = {
     "Charger":                          "Load",
     "Aucun profil sauvegardé":          "No saved profiles",
 
+    # ── gaming mode ──────────────────────────────────────────────────────────
+    "Mode Jeu":                         "Gaming mode",
+    "MODE JEU":                         "GAMING MODE",
+    "Préréglage auto quand un jeu est en plein écran.":
+        "Auto preset when a game goes fullscreen.",
+    "Lum. jeu":                         "Game bri.",
+    "Con. jeu":                         "Game con.",
+    "Désactivé pendant le mode jeu":    "Disabled during gaming mode",
+
     # ── night mode ───────────────────────────────────────────────────────────
     "MODE NUIT":                        "NIGHT MODE",
     "Activer le mode nuit":             "Enable night mode",

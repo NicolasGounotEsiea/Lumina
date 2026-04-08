@@ -130,6 +130,7 @@ class MonitorCard(QFrame):
         self._timer.timeout.connect(self._apply_changes)
         self._pending_bri: int | None = None
         self._pending_con: int | None = None
+        self._ddc_suspended: bool = False
 
         self._thread: QThread | None = None
         self._worker: _DDCWorker | None = None
@@ -300,6 +301,8 @@ class MonitorCard(QFrame):
             self._timer.start()
 
     def _apply_changes(self) -> None:
+        if self._ddc_suspended:
+            return  # Keep pending values; will flush on resume
         bri = self._pending_bri
         con = self._pending_con
         self._pending_bri = None
@@ -308,6 +311,12 @@ class MonitorCard(QFrame):
         self._sig_bri_con.emit(bri, con)
         if self.sync_hook and (bri is not None or con is not None):
             self.sync_hook(self.device_name, bri, con)
+
+    def set_ddc_suspended(self, suspended: bool) -> None:
+        """Suspend or resume DDC-CI writes. On resume, flush any pending values."""
+        self._ddc_suspended = suspended
+        if not suspended:
+            self._apply_changes()
 
     # ── Gamma (GPU / GDI32 — runs on main thread, fast) ──────────────────────
 

@@ -8,7 +8,7 @@ from lumina_control.config import (
 )
 
 
-def get_stylesheet(dark: bool = True) -> str:
+def get_stylesheet(dark: bool = True, gaming: bool = False) -> str:
     """Return the full Qt stylesheet for dark or light mode."""
 
     if dark:
@@ -54,6 +54,13 @@ def get_stylesheet(dark: bool = True) -> str:
         scroll_h   = "#A8A8A8"
         sl_handle  = "#FFFFFF"   # handle blanc en mode clair
         card_top   = "#FFFFFF"   # légère surbrillance en haut des cartes
+
+    if gaming:
+        ac     = "#FF4444"
+        ad     = "#CC2222"
+        asu    = "rgba(255,68,68,0.14)"
+        ac_rgb = "255,68,68"
+        bacc   = "#5A2828" if dark else "#D4AAAA"
 
     return f"""
 
@@ -452,6 +459,27 @@ QPushButton#CollapsibleHeader:checked {{
 }}
 QPushButton#CollapsibleHeader:pressed {{
     background-color: {hdr_check};
+}}
+
+/* ─── Gaming toggle (pill checkable) ─────────────────────────────────── */
+QPushButton#GamingToggle {{
+    background-color: transparent;
+    border: 1px solid {bacc};
+    border-radius: 999px;
+    padding: 5px 16px;
+    color: {mute};
+    font-weight: 600;
+    font-size: 12px;
+}}
+QPushButton#GamingToggle:hover {{
+    border-color: {btn_hover2};
+    color: {txt};
+    background-color: {hdr_hover};
+}}
+QPushButton#GamingToggle:checked {{
+    background-color: rgba(255,68,68,0.12);
+    border-color: #FF4444;
+    color: #FF4444;
 }}
 
 /* ─── Focus toggle (pill checkable) ───────────────────────────────────── */

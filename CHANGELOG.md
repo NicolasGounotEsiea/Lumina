@@ -5,6 +5,19 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/).
 
 ---
 
+## [1.2.1] — 2026-04-08
+
+### Ajouté
+- **Mode Jeu** : détection automatique du plein écran (comparaison rect fenêtre ↔ rect moniteur via `GetMonitorInfoW`). Quand un jeu passe en plein écran, applique un préréglage luminosité/contraste configurable puis suspend les écritures DDC-CI pour ne pas interrompre le jeu. Rétablit les valeurs d'origine à la sortie du plein écran.
+- **Thème rouge** : toute l'interface bascule en rouge dès l'activation du mode jeu (`get_stylesheet(gaming=True)`).
+- **`is_fullscreen_foreground()`** dans `utils.py` — détecte le plein écran via comparaison des rects sans dépendance externe.
+- **DDC suspension** dans `MonitorCard` : flag `_ddc_suspended` + méthode `set_ddc_suspended()` — les sliders accumulent les changements, qui sont vidés à la reprise.
+- Section **MODE JEU** dans le panneau principal (collapsible) avec toggle activer/désactiver et sliders de luminosité/contraste cibles.
+- Entrée **Mode Jeu** dans le menu contextuel du tray (case à cocher synchronisée avec le panneau).
+- La section **Profils par application** est grisée automatiquement quand le mode jeu est actif (tooltip explicatif).
+
+---
+
 ## [1.2.0] — 2026-04-08
 
 ### Ajouté

@@ -22,6 +22,9 @@ DEFAULT_SETTINGS: dict = {
     "app_rules_enabled": False,
     "night_mode_enabled": False,
     "night_warmth": 50,         # 0-100
+    "gaming_enabled":    False,
+    "gaming_brightness": 80,
+    "gaming_contrast":   65,
 }
 
 

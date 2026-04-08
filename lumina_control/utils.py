@@ -185,6 +185,40 @@ def get_foreground_window_monitor() -> str | None:
         return None
 
 
+def is_fullscreen_foreground() -> bool:
+    """Return True if the foreground window occupies its monitor entirely."""
+    try:
+        hwnd = win32gui.GetForegroundWindow()
+        if not hwnd:
+            return False
+        cls = win32gui.GetClassName(hwnd)
+        if cls in ("Shell_TrayWnd", "WorkerW", "Progman", "Button"):
+            return False
+        r = win32gui.GetWindowRect(hwnd)
+        MONITOR_DEFAULTTONEAREST = 2
+        hmon = ctypes.windll.user32.MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST)
+        if not hmon:
+            return False
+
+        class _MONITORINFOEX(ctypes.Structure):
+            _fields_ = [
+                ("cbSize",    ctypes.c_ulong),
+                ("rcMonitor", ctypes.wintypes.RECT),
+                ("rcWork",    ctypes.wintypes.RECT),
+                ("dwFlags",   ctypes.c_ulong),
+                ("szDevice",  ctypes.c_wchar * 32),
+            ]
+
+        mi = _MONITORINFOEX()
+        mi.cbSize = ctypes.sizeof(_MONITORINFOEX)
+        if not ctypes.windll.user32.GetMonitorInfoW(hmon, ctypes.byref(mi)):
+            return False
+        m = mi.rcMonitor
+        return r == (m.left, m.top, m.right, m.bottom)
+    except Exception:
+        return False
+
+
 def get_foreground_process() -> str | None:
     """Return the exe filename (lowercase) of the current foreground window.
 
