@@ -90,6 +90,8 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/v')
     permissions:
       contents: write
+      id-token: write
+      attestations: write
 
     steps:
       - uses: actions/checkout@v4
@@ -141,6 +143,11 @@ jobs:
           with open("release_notes.md", "w", encoding="utf-8") as f:
               f.write(header + notes)
           print("Release notes written.")
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: dist-installer\LuminaControlSetup.exe
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
