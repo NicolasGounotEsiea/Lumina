@@ -13,6 +13,8 @@ import logging
 from dataclasses import dataclass
 from typing import Any
 
+from lumina_control.i18n import _
+
 log = logging.getLogger(__name__)
 
 # ── Windows structs ───────────────────────────────────────────────────────────
@@ -54,7 +56,7 @@ class MonitorDescriptor:
 
     @property
     def label(self) -> str:
-        return f"Écran {self.index + 1}"
+        return _("Écran {}").format(self.index + 1)
 
     @property
     def details(self) -> str:
@@ -66,7 +68,7 @@ class MonitorDescriptor:
                 parts.append(f"{int(round(self.hz))} Hz")
             except (ValueError, TypeError):
                 parts.append(f"{self.hz} Hz")
-        return "  ·  ".join(parts) if parts else "Écran détecté"
+        return "  ·  ".join(parts) if parts else _("Écran détecté")
 
 
 # ── Internal helpers ──────────────────────────────────────────────────────────

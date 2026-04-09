@@ -134,14 +134,14 @@ class MonitorCard(QFrame):
 
         self._thread: QThread | None = None
         self._worker: _DDCWorker | None = None
+        self.available: bool = True   # False when DDC-CI handle is absent or read fails
 
         self._build_ui()
 
         if self.monitor is not None:
             self._start_worker()
         else:
-            self.lbl_name.setText(_("Écran {}  (N/A)").format(self.index + 1))
-            self.setEnabled(False)
+            self._mark_unavailable()
 
     # ── Worker thread lifecycle ───────────────────────────────────────────────
 
@@ -180,17 +180,17 @@ class MonitorCard(QFrame):
         layout.setSpacing(8)
         layout.setContentsMargins(12, 10, 12, 12)
 
-        # Header row
+        # ── Header row (always visible) ───────────────────────────────────────
         h = QHBoxLayout()
         h.setSpacing(4)
         self.lbl_name = QLabel(self.descriptor.label)
         self.lbl_name.setObjectName("Title")
 
-        btn_set = QPushButton("⚙")
-        btn_set.setProperty("class", "icon-btn")
-        btn_set.setFixedSize(30, 30)
-        btn_set.setCursor(Qt.PointingHandCursor)
-        btn_set.clicked.connect(self._open_calibration)
+        self._btn_set = QPushButton("⚙")
+        self._btn_set.setProperty("class", "icon-btn")
+        self._btn_set.setFixedSize(30, 30)
+        self._btn_set.setCursor(Qt.PointingHandCursor)
+        self._btn_set.clicked.connect(self._open_calibration)
 
         self.btn_pow = QPushButton("⏻")
         self.btn_pow.setObjectName("PowerBtn")
@@ -202,18 +202,22 @@ class MonitorCard(QFrame):
 
         h.addWidget(self.lbl_name)
         h.addStretch()
-        h.addWidget(btn_set)
+        h.addWidget(self._btn_set)
         h.addWidget(self.btn_pow)
         layout.addLayout(h)
 
-        # Resolution / refresh info
+        # ── Controls body (hidden when DDC-CI unavailable) ────────────────────
+        self._body = QWidget()
+        body_l = QVBoxLayout(self._body)
+        body_l.setContentsMargins(0, 0, 0, 0)
+        body_l.setSpacing(8)
+
         self.lbl_details = QLabel(self.descriptor.details)
         self.lbl_details.setObjectName("MonitorDetails")
-        layout.addWidget(self.lbl_details)
+        body_l.addWidget(self.lbl_details)
 
-        # Brightness / contrast sliders
-        self._add_slider_row(layout, _("☀  Lum."), self._on_brightness_change, "bri")
-        self._add_slider_row(layout, _("◑  Con."), self._on_contrast_change,   "con")
+        self._add_slider_row(body_l, _("☀  Lum."), self._on_brightness_change, "bri")
+        self._add_slider_row(body_l, _("◑  Con."), self._on_contrast_change,   "con")
 
         # Gamma slider (GPU-based, independent of DDC-CI)
         row_g = QHBoxLayout()
@@ -233,7 +237,36 @@ class MonitorCard(QFrame):
         row_g.addWidget(lbl_g)
         row_g.addWidget(self.sl_gamma)
         row_g.addWidget(self.lbl_gamma)
-        layout.addLayout(row_g)
+        body_l.addLayout(row_g)
+
+        layout.addWidget(self._body)
+
+        # ── N/A help block (shown when DDC-CI unavailable) ────────────────────
+        self._na_frame = self._build_na_frame()
+        self._na_frame.setVisible(False)
+        layout.addWidget(self._na_frame)
+
+    def _build_na_frame(self) -> QFrame:
+        """Help block shown when DDC-CI is unavailable for this monitor."""
+        from lumina_control.config import DANGER_COLOR, TEXT_MUTED
+        frame = QFrame()
+        frame.setObjectName("NAHelpFrame")
+        fl = QVBoxLayout(frame)
+        fl.setContentsMargins(10, 8, 10, 8)
+        fl.setSpacing(4)
+
+        title = QLabel("⚠  " + _("DDC-CI indisponible"))
+        title.setObjectName("NATitle")
+        fl.addWidget(title)
+
+        hint = QLabel(_(
+            "Activez « DDC/CI » dans le menu OSD (boutons physiques), puis cliquez ↻."
+        ))
+        hint.setObjectName("NAHint")
+        hint.setWordWrap(True)
+        fl.addWidget(hint)
+
+        return frame
 
     def _add_slider_row(self, layout, label: str, slot, name: str) -> None:
         row = QHBoxLayout()
@@ -268,8 +301,12 @@ class MonitorCard(QFrame):
 
     @Slot()
     def _mark_unavailable(self) -> None:
+        self.available = False
         self.lbl_name.setText(_("Écran {}  (N/A)").format(self.index + 1))
-        self.setEnabled(False)
+        self._btn_set.setEnabled(False)
+        self.btn_pow.setEnabled(False)
+        self._body.setVisible(False)
+        self._na_frame.setVisible(True)
 
     # ── DDC-CI write (dispatched to worker thread) ────────────────────────────
 

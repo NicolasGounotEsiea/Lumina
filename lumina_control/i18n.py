@@ -44,6 +44,7 @@ _EN: dict[str, str] = {
     "Con. secondaires":                 "Sec. con.",
     "Actif — {} écran(s) lié(s)":       "Active — {} screen(s) linked",
     "⚠ Suspendu — Mode Focus actif":    "⚠ Suspended — Focus mode active",
+    "⚠ Suspendu — Mode Jeu actif":      "⚠ Suspended — Gaming mode active",
     "GAMMA GPU":                        "GPU GAMMA",
     "Gamma":                            "Gamma",
     "Importer":                         "Import",
@@ -77,7 +78,14 @@ _EN: dict[str, str] = {
     "Détecté : {}":                     "Detected: {}",
     "● {}":                             "● {}",
 
+    # ── monitor_enumerate ────────────────────────────────────────────────────
+    "Écran détecté":                    "Monitor detected",
+
     # ── monitor_card ─────────────────────────────────────────────────────────
+    "Activez « DDC/CI » dans le menu OSD (boutons physiques), puis cliquez ↻.":
+        "Enable « DDC/CI » in the OSD menu (physical buttons), then click ↻.",
+    "{} écran(s) sans DDC-CI — activez DDC/CI dans le menu OSD":
+        "{} monitor(s) without DDC-CI — enable DDC/CI in the OSD menu",
     "Écran {}":                         "Screen {}",
     "☀  Lum.":                          "☀  Bri.",
     "◑  Con.":                          "◑  Con.",
@@ -85,6 +93,15 @@ _EN: dict[str, str] = {
     "Écran {}  (N/A)":                  "Screen {}  (N/A)",
 
     # ── app_rules_dialog ──────────────────────────────────────────────────────
+    "Profils automatiques par application": "Automatic per-app profiles",
+    "Détection automatique toutes les 500 ms · "
+    "Les réglages sont restaurés dès que vous quittez l'application.":
+        "Automatic detection every 500 ms · "
+        "Settings are restored as soon as you leave the application.",
+    "Lum: {}%":                         "Bri: {}%",
+    "Con: {}%":                         "Con: {}%",
+    "γ: {}":                            "γ: {}",
+    "RVB: {}/{}/{}":                    "RGB: {}/{}/{}",
     "Activer / désactiver":             "Enable / disable",
     "Modifier":                         "Edit",
     "Supprimer":                        "Delete",

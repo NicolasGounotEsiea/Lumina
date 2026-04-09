@@ -53,16 +53,16 @@ class _RuleRow(QFrame):
 
         parts = [f"<b>{rule.process}</b>"]
         if rule.brightness is not None:
-            parts.append(f"Lum: {rule.brightness}%")
+            parts.append(_("Lum: {}%").format(rule.brightness))
         if rule.contrast is not None:
-            parts.append(f"Con: {rule.contrast}%")
+            parts.append(_("Con: {}%").format(rule.contrast))
         if rule.gamma is not None:
-            parts.append(f"γ: {rule.gamma:.2f}")
+            parts.append(_("γ: {}").format(f"{rule.gamma:.2f}"))
         if any(v is not None for v in (rule.red, rule.green, rule.blue)):
             r = rule.red   if rule.red   is not None else "·"
             g = rule.green if rule.green is not None else "·"
             b = rule.blue  if rule.blue  is not None else "·"
-            parts.append(f"RVB: {r}/{g}/{b}")
+            parts.append(_("RVB: {}/{}/{}").format(r, g, b))
 
         detail = QLabel("  ·  ".join(parts))
         detail.setObjectName("RuleRowDetail")
@@ -473,11 +473,13 @@ class AppRulesDialog(QDialog):
         hdr_l.setContentsMargins(18, 16, 18, 10)
         hdr_l.setSpacing(3)
 
-        t = QLabel("Profils automatiques par application")
+        t = QLabel(_("Profils automatiques par application"))
         t.setObjectName("AppTitle")
         sub = QLabel(
-            "Détection automatique toutes les 500 ms · "
-            "Les réglages sont restaurés dès que vous quittez l'application."
+            _(
+                "Détection automatique toutes les 500 ms · "
+                "Les réglages sont restaurés dès que vous quittez l'application."
+            )
         )
         sub.setStyleSheet(f"font-size:11px; color:{TEXT_MUTED};")
         sub.setWordWrap(True)

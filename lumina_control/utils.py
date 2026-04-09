@@ -11,6 +11,8 @@ import win32gui
 import win32process
 from PySide6.QtGui import QCursor
 
+from lumina_control.monitor_enumerate import _MONITORINFOEX
+
 log = logging.getLogger(__name__)
 
 
@@ -167,15 +169,6 @@ def get_foreground_window_monitor() -> str | None:
         if not hmon:
             return None
 
-        class _MONITORINFOEX(ctypes.Structure):
-            _fields_ = [
-                ("cbSize",    ctypes.c_ulong),
-                ("rcMonitor", ctypes.wintypes.RECT),
-                ("rcWork",    ctypes.wintypes.RECT),
-                ("dwFlags",   ctypes.c_ulong),
-                ("szDevice",  ctypes.c_wchar * 32),
-            ]
-
         info = _MONITORINFOEX()
         info.cbSize = ctypes.sizeof(_MONITORINFOEX)
         if ctypes.windll.user32.GetMonitorInfoW(hmon, ctypes.byref(info)):
@@ -215,15 +208,6 @@ def is_fullscreen_foreground() -> bool:
         hmon = ctypes.windll.user32.MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST)
         if not hmon:
             return False
-
-        class _MONITORINFOEX(ctypes.Structure):
-            _fields_ = [
-                ("cbSize",    ctypes.c_ulong),
-                ("rcMonitor", ctypes.wintypes.RECT),
-                ("rcWork",    ctypes.wintypes.RECT),
-                ("dwFlags",   ctypes.c_ulong),
-                ("szDevice",  ctypes.c_wchar * 32),
-            ]
 
         mi = _MONITORINFOEX()
         mi.cbSize = ctypes.sizeof(_MONITORINFOEX)

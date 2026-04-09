@@ -17,11 +17,11 @@ from lumina_control.config import (
 from lumina_control.i18n import _
 from lumina_control.profiles import ProfileManager
 from lumina_control.app_rules import AppRule, AppRuleManager
+from lumina_control.rules_engine import RulesEngine
 from lumina_control import startup as _startup
 from lumina_control.updater import UpdateChecker
 from lumina_control.utils import (
-    get_active_screen_index, get_foreground_process,
-    get_foreground_window_monitor, invalidate_monitors_cache,
+    get_active_screen_index, invalidate_monitors_cache,
     is_fullscreen_foreground, wake_all_monitors,
 )
 from lumina_control.monitor_enumerate import enumerate_monitors
@@ -106,7 +106,6 @@ class MainWindow(QWidget):
         self.gamma_values:  dict   = s["gamma_values"]
         self.focus_enabled         = s["focus_enabled"]
         self.focus_dim             = s["focus_dim"]
-        self.app_rules_enabled     = s["app_rules_enabled"]
         self.night_mode_enabled    = s["night_mode_enabled"]
         self.night_warmth          = s["night_warmth"]
         self.gaming_enabled        = s["gaming_enabled"]
@@ -114,16 +113,15 @@ class MainWindow(QWidget):
         self.gaming_contrast       = s["gaming_contrast"]
 
         # App rules engine
-        self._rule_mgr        = AppRuleManager(get_rules_path())
-        self._rules:            list[AppRule]    = self._rule_mgr.load()
-        self._active_rule:      AppRule | None   = None
-        self._pre_rule_bri:     dict[str, int]               = {}
-        self._pre_rule_con:     dict[str, int]               = {}
-        self._pre_rule_gamma:   dict[str, float]             = {}
-        self._pre_rule_rgb:     dict[str, tuple[int,int,int]] = {}
-        self._active_rule_device: str | None                 = None
-        self._rule_candidate:   str | None       = None  # process being watched for stability
-        self._rule_ticks:       int              = 0     # consecutive polls with same process
+        self._rule_mgr = AppRuleManager(get_rules_path())
+        self._rules_engine = RulesEngine(
+            rules=self._rule_mgr.load(),
+            enabled=s["app_rules_enabled"],
+            get_cards=lambda: self.cards,
+            on_rule_active=self._update_rule_status,
+            on_rule_inactive=lambda: self._update_rule_status(None),
+            on_proc_detect=self._on_proc_detect,
+        )
 
         # Transient runtime state
         self.cards:               list[MonitorCard] = []
@@ -255,6 +253,13 @@ class MainWindow(QWidget):
         screens_hdr.addWidget(self._section_label(_("ÉCRANS")))
         screens_hdr.addStretch()
         self.main_l.addLayout(screens_hdr)
+        # DDC-CI warning banner (hidden until a N/A monitor is detected)
+        self._lbl_ddc_banner = QLabel("")
+        self._lbl_ddc_banner.setObjectName("DDCBanner")
+        self._lbl_ddc_banner.setWordWrap(True)
+        self._lbl_ddc_banner.setVisible(False)
+        self.main_l.addWidget(self._lbl_ddc_banner)
+
         self.mon_l = QVBoxLayout()
         self.mon_l.setSpacing(8)
         self.main_l.addLayout(self.mon_l)
@@ -583,7 +588,7 @@ class MainWindow(QWidget):
         # Toggle + status
         h_top = QHBoxLayout()
         self._chk_app_rules = QCheckBox(_("Activer les profils par application"))
-        self._chk_app_rules.setChecked(self.app_rules_enabled)
+        self._chk_app_rules.setChecked(self._rules_engine.enabled)
         self._chk_app_rules.toggled.connect(self._set_app_rules_enabled)
         h_top.addWidget(self._chk_app_rules, stretch=1)
         sec.add_layout(h_top)
@@ -592,6 +597,11 @@ class MainWindow(QWidget):
         self._lbl_rule_status = QLabel(_("Aucune règle active"))
         self._lbl_rule_status.setObjectName("RuleStatus")
         sec.add_widget(self._lbl_rule_status)
+
+        # Conflict badge (shown when a higher-priority mode is active)
+        self._lbl_rules_conflict = QLabel("")
+        self._lbl_rules_conflict.setObjectName("SyncStatus")
+        sec.add_widget(self._lbl_rules_conflict)
 
         # Real-time process display (visible when enabled)
         self._lbl_proc_detect = QLabel("")
@@ -888,7 +898,7 @@ class MainWindow(QWidget):
         self.sl_sync_bri.setValue(self.sync_offset_bri)
         self.sl_sync_con.setValue(self.sync_offset_con)
         self.sl_gamma.setValue(int(round(self.gamma_value * 100)))
-        self._chk_app_rules.setChecked(self.app_rules_enabled)
+        self._chk_app_rules.setChecked(self._rules_engine.enabled)
 
         for w in widgets:
             w.blockSignals(False)
@@ -927,14 +937,14 @@ class MainWindow(QWidget):
             "gamma_values":          {c.device_name: c.gamma_value for c in self.cards},
             "focus_enabled":         self.focus_enabled,
             "focus_dim":             self.focus_dim,
-            "app_rules_enabled":     self.app_rules_enabled,
+            "app_rules_enabled":     self._rules_engine.enabled,
             "night_mode_enabled":    self.night_mode_enabled,
             "night_warmth":          self.night_warmth,
             "gaming_enabled":        self.gaming_enabled,
             "gaming_brightness":     self.gaming_brightness,
             "gaming_contrast":       self.gaming_contrast,
         })
-        self._rule_mgr.save(self._rules)
+        self._rule_mgr.save(self._rules_engine.rules)
         log.debug("Settings saved.")
 
     # ─────────────────────────────────────────────────────────────────────────
@@ -970,6 +980,16 @@ class MainWindow(QWidget):
             if c.device_name in self.gamma_values:
                 c.set_gamma_value(float(self.gamma_values[c.device_name]))
 
+        # DDC-CI banner: show when at least one monitor has no DDC handle
+        na_count = sum(1 for c in self.cards if not c.available)
+        if na_count:
+            self._lbl_ddc_banner.setText(
+                _("{} écran(s) sans DDC-CI — activez DDC/CI dans le menu OSD").format(na_count)
+            )
+            self._lbl_ddc_banner.setVisible(True)
+        else:
+            self._lbl_ddc_banner.setVisible(False)
+
         self.adjustSize()
         self._refresh_sync_combo()
         self._update_sync_ui()
@@ -987,124 +1007,24 @@ class MainWindow(QWidget):
         self._apply_focus(active_idx=idx)
         if self.gaming_enabled or self._gaming_active:
             self._check_gaming_mode()
-        if self.app_rules_enabled and not self.focus_enabled and not self._gaming_active:
-            self._check_app_rules()
+        if not self.focus_enabled and not self._gaming_active:
+            self._rules_engine.poll()
 
     # ─────────────────────────────────────────────────────────────────────────
-    # App rules engine
+    # App rules — UI callbacks (logic lives in RulesEngine)
     # ─────────────────────────────────────────────────────────────────────────
 
-    def _check_app_rules(self) -> None:
-        """Match the foreground process against rules and apply if changed."""
-        proc = get_foreground_process()
-
-        # Update the real-time process display
-        if hasattr(self, "_lbl_proc_detect"):
-            if proc:
-                has_rule = any(r.enabled and r.process.lower() == proc for r in self._rules)
-                self._lbl_proc_detect.setText(_("Détecté : {}").format(proc))
-                self._lbl_proc_detect.setProperty("matched", "true" if has_rule else "false")
-                self._lbl_proc_detect.style().unpolish(self._lbl_proc_detect)
-                self._lbl_proc_detect.style().polish(self._lbl_proc_detect)
-            else:
-                self._lbl_proc_detect.setText("")
-
-        # Find the first matching enabled rule
-        matched: AppRule | None = None
+    def _on_proc_detect(self, proc: str | None, has_rule: bool) -> None:
+        """Update the real-time process label. Called by RulesEngine every poll tick."""
+        if not hasattr(self, "_lbl_proc_detect"):
+            return
         if proc:
-            for rule in self._rules:
-                if rule.enabled and rule.process.lower() == proc:
-                    matched = rule
-                    break
-
-        # Stability guard: require 2 consecutive ticks before acting (avoids
-        # flickering on fast alt-tab)
-        if proc != self._rule_candidate:
-            self._rule_candidate = proc
-            self._rule_ticks = 0
-            return
-        self._rule_ticks += 1
-        if self._rule_ticks < 2:
-            return
-
-        # Same rule already active → nothing to do
-        prev = self._active_rule
-        same = (matched is not None and prev is not None
-                and matched.process == prev.process)
-        if same:
-            return
-
-        if matched is None and prev is None:
-            return
-
-        # ── Leaving a rule (back to neutral) ─────────────────────────────
-        if matched is None and prev is not None:
-            self._restore_pre_rule()
-            self._active_rule = None
-            self._update_rule_status(None)
-            return
-
-        # ── Entering a rule (or switching between rules) ──────────────────
-        device = get_foreground_window_monitor()
-
-        # Save current state only when entering the first rule
-        if not self._pre_rule_bri:
-            target = [c for c in self.cards
-                      if c.isEnabled() and (not device or c.device_name == device)]
-            self._pre_rule_bri = {c.device_name: c.sl_bri.value() for c in target}
-            self._pre_rule_con = {c.device_name: c.sl_con.value() for c in target}
-            if matched.gamma is not None:
-                self._pre_rule_gamma = {c.device_name: c.gamma_value for c in target}
-            if matched.red is not None or matched.green is not None or matched.blue is not None:
-                for c in target:
-                    rgb = c.read_rgb()
-                    if rgb is not None:
-                        self._pre_rule_rgb[c.device_name] = rgb
-            self._active_rule_device = device
-
-        self._apply_app_rule(matched, device)
-        self._active_rule = matched
-        self._update_rule_status(matched)
-
-    def _apply_app_rule(self, rule: AppRule, device: str | None) -> None:
-        log.debug("Applying rule '%s' on %s: bri=%s con=%s gamma=%s rgb=(%s,%s,%s)",
-                  rule.label, device or "all",
-                  rule.brightness, rule.contrast, rule.gamma,
-                  rule.red, rule.green, rule.blue)
-        for c in self.cards:
-            if not c.isEnabled():
-                continue
-            if device and c.device_name != device:
-                continue
-            c.apply_rule_values(rule.brightness, rule.contrast)
-            c.apply_rule_rgb(rule.red, rule.green, rule.blue)
-        if rule.gamma is not None:
-            for c in self.cards:
-                if c.isEnabled() and (not device or c.device_name == device):
-                    c.set_gamma_value(rule.gamma)
-
-    def _restore_pre_rule(self) -> None:
-        if not self._pre_rule_bri:
-            return
-        for c in self.cards:
-            if c.isEnabled():
-                bri = self._pre_rule_bri.get(c.device_name)
-                con = self._pre_rule_con.get(c.device_name)
-                if bri is not None or con is not None:
-                    c.apply_rule_values(bri, con)
-        for device, gamma in self._pre_rule_gamma.items():
-            for c in self.cards:
-                if c.device_name == device and c.isEnabled():
-                    c.set_gamma_value(gamma)
-        for device, rgb in self._pre_rule_rgb.items():
-            for c in self.cards:
-                if c.device_name == device and c.isEnabled():
-                    c.apply_rule_rgb(*rgb)
-        self._pre_rule_bri.clear()
-        self._pre_rule_con.clear()
-        self._pre_rule_gamma.clear()
-        self._pre_rule_rgb.clear()
-        self._active_rule_device = None
+            self._lbl_proc_detect.setText(_("Détecté : {}").format(proc))
+            self._lbl_proc_detect.setProperty("matched", "true" if has_rule else "false")
+            self._lbl_proc_detect.style().unpolish(self._lbl_proc_detect)
+            self._lbl_proc_detect.style().polish(self._lbl_proc_detect)
+        else:
+            self._lbl_proc_detect.setText("")
 
     def _update_rule_status(self, rule: AppRule | None) -> None:
         """Update the status label in the app-rules section."""
@@ -1120,31 +1040,21 @@ class MainWindow(QWidget):
         self._lbl_rule_status.style().polish(self._lbl_rule_status)
 
     def _set_app_rules_enabled(self, enabled: bool) -> None:
-        self.app_rules_enabled = enabled
-        if not enabled:
-            self._restore_pre_rule()
-            self._active_rule = None
-            self._rule_candidate = None
-            self._rule_ticks = 0
-            self._update_rule_status(None)
+        self._rules_engine.set_enabled(enabled)
 
     def _open_app_rules_dialog(self) -> None:
         from lumina_control.ui.app_rules_dialog import AppRulesDialog
         dlg = AppRulesDialog(
-            rules=self._rules,
-            detection_active=self.app_rules_enabled,
+            rules=self._rules_engine.rules,
+            detection_active=self._rules_engine.enabled,
             parent=self,
         )
         dlg.rules_changed.connect(self._on_rules_changed)
         dlg.exec()
 
     def _on_rules_changed(self, rules: list) -> None:
-        self._rules = rules
         self._rule_mgr.save(rules)
-        # Reset active rule so it gets re-evaluated on next poll
-        self._active_rule = None
-        self._rule_candidate = None
-        self._rule_ticks = 0
+        self._rules_engine.update_rules(rules)
 
     # ─────────────────────────────────────────────────────────────────────────
     # Gaming mode
@@ -1206,30 +1116,34 @@ class MainWindow(QWidget):
 
     def _enter_gaming_mode(self) -> None:
         self._gaming_active = True
+        self._update_gaming_ui(True)
+        self._update_modes_conflict_ui()
         # Save current slider values
-        self._pre_gaming_bri = {c.index: c.sl_bri.value() for c in self.cards if c.isEnabled()}
-        self._pre_gaming_con = {c.index: c.sl_con.value() for c in self.cards if c.isEnabled()}
+        self._pre_gaming_bri = {c.index: c.sl_bri.value() for c in self.cards if c.available}
+        self._pre_gaming_con = {c.index: c.sl_con.value() for c in self.cards if c.available}
         # Apply gaming preset, then suspend DDC to avoid mid-game interruptions
         for c in self.cards:
-            if c.isEnabled():
+            if c.available:
                 c.apply_rule_values(self.gaming_brightness, self.gaming_contrast)
         QTimer.singleShot(300, self._suspend_ddc_all)
         log.debug("Gaming mode: entered (bri=%d con=%d)", self.gaming_brightness, self.gaming_contrast)
 
     def _suspend_ddc_all(self) -> None:
         for c in self.cards:
-            if c.isEnabled():
+            if c.available:
                 c.set_ddc_suspended(True)
 
     def _exit_gaming_mode(self) -> None:
         self._gaming_active = False
+        self._update_gaming_ui(self.gaming_enabled)
+        self._update_modes_conflict_ui()
         # Resume DDC first so restore writes go through
         for c in self.cards:
-            if c.isEnabled():
+            if c.available:
                 c.set_ddc_suspended(False)
         # Restore pre-gaming values
         for c in self.cards:
-            if c.isEnabled():
+            if c.available:
                 bri = self._pre_gaming_bri.get(c.index)
                 con = self._pre_gaming_con.get(c.index)
                 if bri is not None or con is not None:
@@ -1255,7 +1169,7 @@ class MainWindow(QWidget):
         v = self.sl_glob.value()
         self._sync_guard = True
         for c in self.cards:
-            if c.isEnabled():
+            if c.available:
                 c.sl_bri.setValue(v)
         self._sync_guard = False
 
@@ -1265,7 +1179,7 @@ class MainWindow(QWidget):
 
     def _set_all_power(self, on: bool) -> None:
         for c in self.cards:
-            if c.isEnabled():
+            if c.available:
                 c.set_power(on)
 
     def update_glob_label(self, v: int) -> None:
@@ -1290,7 +1204,7 @@ class MainWindow(QWidget):
                 "brightness":  c.sl_bri.value(),
                 "contrast":    c.sl_con.value(),
             }
-            for c in self.cards if c.isEnabled()
+            for c in self.cards if c.available
         ]
         saved_at = self._profile.save_snapshot(monitors)
         self.lbl_snapshot.setText(_("Dernier : {}").format(saved_at))
@@ -1307,7 +1221,7 @@ class MainWindow(QWidget):
         for item in snap["monitors"]:
             card = card_by_device.get(item.get("device_name")) \
                 or card_by_index.get(item.get("index"))
-            if card and card.isEnabled():
+            if card and card.available:
                 if "brightness" in item:
                     card.sl_bri.setValue(int(item["brightness"]))
                 if "contrast" in item:
@@ -1357,16 +1271,42 @@ class MainWindow(QWidget):
         if not enabled:
             self._lbl_sync_status.setText("")
             self._lbl_sync_status.setProperty("state", "")
+        elif self._gaming_active:
+            self._lbl_sync_status.setText(_("⚠ Suspendu — Mode Jeu actif"))
+            self._lbl_sync_status.setProperty("state", "warning")
         elif self.focus_enabled:
             self._lbl_sync_status.setText(_("⚠ Suspendu — Mode Focus actif"))
             self._lbl_sync_status.setProperty("state", "warning")
         else:
             n = sum(1 for c in self.cards
-                    if c.device_name != self.sync_master_device and c.isEnabled())
+                    if c.device_name != self.sync_master_device and c.available)
             self._lbl_sync_status.setText(_("Actif — {} écran(s) lié(s)").format(n))
             self._lbl_sync_status.setProperty("state", "active")
         self._lbl_sync_status.style().unpolish(self._lbl_sync_status)
         self._lbl_sync_status.style().polish(self._lbl_sync_status)
+
+    def _update_modes_conflict_ui(self) -> None:
+        """Refresh conflict badges in sections that can be suspended by a higher-priority mode."""
+        # Sync section badge (also checks gaming mode)
+        if hasattr(self, "_lbl_sync_status"):
+            self._update_sync_ui()
+
+        # App rules conflict badge
+        if not hasattr(self, "_lbl_rules_conflict"):
+            return
+        if self._gaming_active:
+            text  = _("⚠ Suspendu — Mode Jeu actif")
+            state = "warning"
+        elif self.focus_enabled:
+            text  = _("⚠ Suspendu — Mode Focus actif")
+            state = "warning"
+        else:
+            text  = ""
+            state = ""
+        self._lbl_rules_conflict.setText(text)
+        self._lbl_rules_conflict.setProperty("state", state)
+        self._lbl_rules_conflict.style().unpolish(self._lbl_rules_conflict)
+        self._lbl_rules_conflict.style().polish(self._lbl_rules_conflict)
 
     def _set_sync_enabled(self, enabled: bool) -> None:
         self.sync_enabled = enabled
@@ -1408,11 +1348,13 @@ class MainWindow(QWidget):
     def sync_now(self) -> None:
         if not self.sync_enabled or not self.cards or self.focus_enabled:
             return
+        if self._rules_engine.active_rule is not None:
+            return
         master = next(
             (c for c in self.cards if c.device_name == self.sync_master_device),
             None,
         )
-        if not master or not master.isEnabled():
+        if not master or not master.available:
             return
         bri = self._clamp(master.sl_bri.value() + self.sync_offset_bri
                           if self.sync_relative_enabled else master.sl_bri.value())
@@ -1420,7 +1362,7 @@ class MainWindow(QWidget):
                           if self.sync_relative_enabled else master.sl_con.value())
         self._sync_guard = True
         for c in self.cards:
-            if c.device_name != master.device_name and c.isEnabled():
+            if c.device_name != master.device_name and c.available:
                 c.sl_bri.setValue(bri)
                 c.sl_con.setValue(con)
         self._sync_guard = False
@@ -1429,6 +1371,8 @@ class MainWindow(QWidget):
 
     def _on_monitor_changed(self, device_name: str, brightness, contrast) -> None:
         if self._sync_guard or not self.sync_enabled or self.focus_enabled:
+            return
+        if self._rules_engine.active_rule is not None:
             return
         if device_name != self.sync_master_device:
             return
@@ -1444,7 +1388,7 @@ class MainWindow(QWidget):
                           + (self.sync_offset_con if self.sync_relative_enabled else 0))
         self._sync_guard = True
         for c in self.cards:
-            if c.device_name != device_name and c.isEnabled():
+            if c.device_name != device_name and c.available:
                 c.sl_bri.setValue(bri)
                 c.sl_con.setValue(con)
         self._sync_guard = False
@@ -1455,7 +1399,7 @@ class MainWindow(QWidget):
         if device_name != self.sync_master_device:
             return
         for c in self.cards:
-            if c.device_name != device_name and c.isEnabled():
+            if c.device_name != device_name and c.available:
                 c.set_rgb_values(rgb)
 
     def _sync_rgb_from_master(self, master: MonitorCard) -> None:
@@ -1470,7 +1414,7 @@ class MainWindow(QWidget):
             log.debug("RGB read from master failed: %s", e)
             return
         for c in self.cards:
-            if c.device_name != master.device_name and c.isEnabled():
+            if c.device_name != master.device_name and c.available:
                 c.set_rgb_values(rgb)
 
     @staticmethod
@@ -1581,21 +1525,24 @@ class MainWindow(QWidget):
             self.focus_action.setChecked(enabled)
         self.btn_focus.setText(_("Activé") if enabled else _("Désactivé"))
         if enabled:
+            # Cleanly exit any active app rule before focus takes over
+            self._rules_engine.suspend()
             self.pre_focus_values = {
-                c.index: c.sl_bri.value() for c in self.cards if c.isEnabled()
+                c.index: c.sl_bri.value() for c in self.cards if c.available
             }
             self.last_active = None
             self._apply_focus(force=True)
         else:
             self._restore_pre_focus()
         self._update_sync_ui()
+        self._update_modes_conflict_ui()
 
     def _restore_pre_focus(self) -> None:
         if not self.pre_focus_values:
             return
         self._sync_guard = True
         for c in self.cards:
-            if c.index in self.pre_focus_values and c.isEnabled():
+            if c.index in self.pre_focus_values and c.available:
                 c.sl_bri.setValue(self.pre_focus_values[c.index])
         self.pre_focus_values.clear()
         self._sync_guard = False
@@ -1617,7 +1564,7 @@ class MainWindow(QWidget):
         self._last_focus_dim = dim
         self._sync_guard = True
         for c in self.cards:
-            if not c.isEnabled():
+            if not c.available:
                 continue
             desired = target if c.index == active_idx else bg
             if c.sl_bri.value() != desired:

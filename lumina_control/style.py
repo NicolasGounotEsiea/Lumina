@@ -273,6 +273,32 @@ QLabel#SyncStatus[state="warning"] {{
     color: {dang};
 }}
 
+/* DDC-CI unavailable — inline card help block */
+QFrame#NAHelpFrame {{
+    background: rgba(255,111,111,0.10);
+    border: 1px solid rgba(255,111,111,0.30);
+    border-radius: 6px;
+}}
+QLabel#NATitle {{
+    font-size: 12px;
+    font-weight: 600;
+    color: {dang};
+}}
+QLabel#NAHint {{
+    font-size: 11px;
+    color: {mute};
+}}
+
+/* DDC-CI missing banner above monitor list */
+QLabel#DDCBanner {{
+    font-size: 11px;
+    color: {dang};
+    background: rgba(255,111,111,0.10);
+    border: 1px solid rgba(255,111,111,0.25);
+    border-radius: 6px;
+    padding: 6px 10px;
+}}
+
 QFrame#Separator {{
     background: {bord};
     max-height: 1px;
