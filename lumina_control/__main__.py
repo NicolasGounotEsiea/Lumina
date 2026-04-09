@@ -61,6 +61,7 @@ def main() -> None:
 
     # Apply stylesheet matching the current Windows theme
     _dark = [is_windows_dark_mode()]
+    _tray_ref: list = [None]   # filled after Tray is created
     app.setStyleSheet(get_stylesheet(_dark[0]))
 
     from PySide6.QtCore import QTimer as _QTimer
@@ -68,7 +69,8 @@ def main() -> None:
         d = is_windows_dark_mode()
         if d != _dark[0]:
             _dark[0] = d
-            app.setStyleSheet(get_stylesheet(d))
+            gaming = _tray_ref[0].window.gaming_enabled if _tray_ref[0] else False
+            app.setStyleSheet(get_stylesheet(d, gaming=gaming))
     _theme_timer = _QTimer(app)   # parent = app keeps it alive
     _theme_timer.timeout.connect(_check_theme)
     _theme_timer.start(5000)  # check every 5 s
@@ -81,6 +83,7 @@ def main() -> None:
 
     from lumina_control.ui.tray import Tray
     tray = Tray(app, icon_path)
+    _tray_ref[0] = tray   # now the theme checker knows gaming state
 
     if _first_run:
         from lumina_control.ui.onboarding import OnboardingDialog

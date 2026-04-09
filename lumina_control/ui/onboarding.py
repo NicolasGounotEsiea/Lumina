@@ -1,7 +1,7 @@
 """First-run onboarding wizard."""
 import logging
 
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import Qt, QObject, QThread, QTimer, Signal
 from PySide6.QtWidgets import (
     QDialog, QFrame, QHBoxLayout, QLabel, QPushButton,
     QStackedWidget, QVBoxLayout, QWidget,
@@ -12,6 +12,20 @@ from lumina_control.i18n import _
 log = logging.getLogger(__name__)
 
 _STEP_COUNT = 4
+
+
+class _ScanWorker(QObject):
+    """Runs enumerate_monitors() on a background thread."""
+    done   = Signal(list)   # list[MonitorDescriptor]
+    failed = Signal(str)
+
+    def run(self) -> None:
+        try:
+            from lumina_control.monitor_enumerate import enumerate_monitors
+            self.done.emit(enumerate_monitors())
+        except Exception as e:
+            log.debug("DDC scan failed: %s", e)
+            self.failed.emit(str(e))
 
 
 class OnboardingDialog(QDialog):
@@ -224,33 +238,44 @@ class OnboardingDialog(QDialog):
         l.addStretch()
         return w
 
-    # ── DDC scan ──────────────────────────────────────────────────────────────
+    # ── DDC scan (background thread) ──────────────────────────────────────────
 
     def _run_ddc_scan(self) -> None:
-        try:
-            from lumina_control.monitor_enumerate import enumerate_monitors
-            descs = enumerate_monitors()
-            ddc_ok  = [d for d in descs if d.ddc_handle is not None]
-            ddc_no  = [d for d in descs if d.ddc_handle is None]
+        self._ddc_results.setText(_("Scan en cours…"))
+        self._ddc_warn.setVisible(False)
 
-            lines = []
-            for d in ddc_ok:
-                lines.append(f"  ✓  {d.label}")
-            for d in ddc_no:
-                lines.append(f"  ✗  {d.label}  ({_('DDC-CI indisponible')})")
+        self._scan_thread = QThread()
+        self._scan_worker = _ScanWorker()
+        self._scan_worker.moveToThread(self._scan_thread)
+        self._scan_thread.started.connect(self._scan_worker.run)
+        self._scan_worker.done.connect(self._on_scan_done)
+        self._scan_worker.failed.connect(self._on_scan_failed)
+        self._scan_worker.done.connect(self._scan_thread.quit)
+        self._scan_worker.failed.connect(self._scan_thread.quit)
+        self._scan_thread.finished.connect(self._scan_worker.deleteLater)
+        self._scan_thread.start()
 
-            if not descs:
-                self._ddc_results.setText(_("Aucun écran détecté."))
-                self._ddc_warn.setVisible(True)
-            else:
-                header = _("{} écran(s) détecté(s) :").format(len(descs))
-                self._ddc_results.setText(header + "\n" + "\n".join(lines))
-                self._ddc_warn.setVisible(len(ddc_no) > 0)
+    def _on_scan_done(self, descs: list) -> None:
+        ddc_ok = [d for d in descs if d.ddc_handle is not None]
+        ddc_no = [d for d in descs if d.ddc_handle is None]
 
-        except Exception as e:
-            log.debug("DDC scan failed during onboarding: %s", e)
-            self._ddc_results.setText(_("Scan impossible : {}").format(str(e)))
+        lines = []
+        for d in ddc_ok:
+            lines.append(f"  ✓  {d.label}")
+        for d in ddc_no:
+            lines.append(f"  ✗  {d.label}  ({_('DDC-CI indisponible')})")
+
+        if not descs:
+            self._ddc_results.setText(_("Aucun écran détecté."))
             self._ddc_warn.setVisible(True)
+        else:
+            header = _("{} écran(s) détecté(s) :").format(len(descs))
+            self._ddc_results.setText(header + "\n" + "\n".join(lines))
+            self._ddc_warn.setVisible(len(ddc_no) > 0)
+
+    def _on_scan_failed(self, error: str) -> None:
+        self._ddc_results.setText(_("Scan impossible : {}").format(error))
+        self._ddc_warn.setVisible(True)
 
     # ── Navigation ────────────────────────────────────────────────────────────
 

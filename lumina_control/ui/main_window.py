@@ -921,7 +921,7 @@ class MainWindow(QWidget):
             self.btn_gaming.setText(_("Activé"))
             self.btn_gaming.blockSignals(False)
             self._apply_gaming_visual(True)
-            self._update_gaming_ui(True)
+            self._update_gaming_ui()
 
     def save_settings(self) -> None:
         """Persist current UI state to disk (called on app exit)."""
@@ -1075,20 +1075,22 @@ class MainWindow(QWidget):
             self.gaming_action.setChecked(enabled)
             self.gaming_action.blockSignals(False)
         self._apply_gaming_visual(enabled)
-        self._update_gaming_ui(enabled)
+        self._update_gaming_ui()
         if not enabled:
             self._gaming_fs_ticks = 0
             self._gaming_exit_timer.stop()
             if self._gaming_active:
                 self._exit_gaming_mode()
 
-    def _update_gaming_ui(self, gaming_on: bool) -> None:
-        """Grey out controls that gaming mode overrides."""
-        self._chk_app_rules.setEnabled(not gaming_on)
-        if gaming_on:
-            self._chk_app_rules.setToolTip(
-                _("Désactivé pendant le mode jeu")
-            )
+    def _update_gaming_ui(self) -> None:
+        """Grey out controls only while a game is actively running in fullscreen.
+
+        Gaming mode can be *enabled* without a game running — app rules still
+        work in that state, so the checkbox must stay interactive.
+        """
+        self._chk_app_rules.setEnabled(not self._gaming_active)
+        if self._gaming_active:
+            self._chk_app_rules.setToolTip(_("Désactivé pendant le mode jeu"))
         else:
             self._chk_app_rules.setToolTip("")
 
@@ -1116,8 +1118,11 @@ class MainWindow(QWidget):
 
     def _enter_gaming_mode(self) -> None:
         self._gaming_active = True
-        self._update_gaming_ui(True)
+        self._update_gaming_ui()
         self._update_modes_conflict_ui()
+        # Exit any active app rule first — restores pre-rule values so the
+        # snapshot below captures the user's actual brightness, not a rule's.
+        self._rules_engine.suspend()
         # Save current slider values
         self._pre_gaming_bri = {c.index: c.sl_bri.value() for c in self.cards if c.available}
         self._pre_gaming_con = {c.index: c.sl_con.value() for c in self.cards if c.available}
@@ -1135,7 +1140,7 @@ class MainWindow(QWidget):
 
     def _exit_gaming_mode(self) -> None:
         self._gaming_active = False
-        self._update_gaming_ui(self.gaming_enabled)
+        self._update_gaming_ui()
         self._update_modes_conflict_ui()
         # Resume DDC first so restore writes go through
         for c in self.cards:
