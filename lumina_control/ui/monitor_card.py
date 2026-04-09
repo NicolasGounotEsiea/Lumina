@@ -248,7 +248,6 @@ class MonitorCard(QFrame):
 
     def _build_na_frame(self) -> QFrame:
         """Help block shown when DDC-CI is unavailable for this monitor."""
-        from lumina_control.config import DANGER_COLOR, TEXT_MUTED
         frame = QFrame()
         frame.setObjectName("NAHelpFrame")
         fl = QVBoxLayout(frame)

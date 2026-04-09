@@ -155,7 +155,7 @@ def enumerate_monitors() -> list[MonitorDescriptor]:
         # Consume one DDC handle per physical monitor behind this HMONITOR.
         # Typically n_phys is 0 (no DDC-CI) or 1; rarely 2+ (e.g. a splitter).
         assigned: Any = None
-        for _ in range(n_phys):
+        for _i in range(n_phys):
             if ddc_idx < len(ddc_handles):
                 if assigned is None:
                     assigned = ddc_handles[ddc_idx]
