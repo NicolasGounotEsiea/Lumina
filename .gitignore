@@ -26,6 +26,7 @@ profiles.json
 
 # Claude Code session data
 .claude/
+CLAUDE.md
 
 # Windows
 Thumbs.db
