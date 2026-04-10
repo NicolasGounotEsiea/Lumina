@@ -257,7 +257,6 @@ _EN: dict[str, str] = {
         "Automatic fullscreen detection: a brightness/contrast preset is applied on entry, "
         "and DDC-CI writes are suspended to avoid interrupting the game. "
         "Everything is restored on exit.",
-    "Profils par application":          "Per-app profiles",
     "Associez un préréglage (luminosité, contraste, gamma, gains RGB) à un exécutable. "
     "Lumina Control détecte automatiquement l'application au premier plan et "
     "applique les réglages — puis les restaure dès que vous changez d'application.":
