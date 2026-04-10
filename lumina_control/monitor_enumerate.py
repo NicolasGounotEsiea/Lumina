@@ -44,19 +44,23 @@ _dxva2  = ctypes.windll.dxva2
 @dataclass
 class MonitorDescriptor:
     """One logical display with geometry and optional DDC-CI handle."""
-    index:       int
-    device_name: str         # e.g. r"\\.\DISPLAY1"
-    x:           int
-    y:           int
-    width:       int
-    height:      int
-    is_primary:  bool
-    hz:          float | None = None
-    ddc_handle:  Any          = None  # monitorcontrol Monitor, or None if no DDC-CI
+    index:         int
+    device_name:   str         # e.g. r"\\.\DISPLAY1"
+    x:             int
+    y:             int
+    width:         int
+    height:        int
+    is_primary:    bool
+    hz:            float | None = None
+    ddc_handle:    Any          = None  # monitorcontrol Monitor, or None if no DDC-CI
+    position_hint: str          = ""    # e.g. "Gauche  ·  Principal" — set by enumerate_monitors
 
     @property
     def label(self) -> str:
-        return _("Écran {}").format(self.index + 1)
+        base = _("Écran {}").format(self.index + 1)
+        if self.position_hint:
+            return f"{base}  —  {self.position_hint}"
+        return base
 
     @property
     def details(self) -> str:
@@ -176,4 +180,40 @@ def enumerate_monitors() -> list[MonitorDescriptor]:
             ddc_handle  = assigned,
         ))
 
+    # ── Compute position hints (Gauche / Droite / Principal …) ───────────────
+    _attach_position_hints(descriptors)
+
     return descriptors
+
+
+def _attach_position_hints(descriptors: list[MonitorDescriptor]) -> None:
+    """Set ``position_hint`` on each descriptor based on physical layout.
+
+    For a single monitor no hint is added.
+    For two or more, monitors are sorted by their dominant axis (horizontal
+    spread → Gauche/Droite, vertical spread → Haut/Bas) and labelled
+    accordingly.  The primary monitor gets an extra "Principal" tag.
+    """
+    if len(descriptors) < 2:
+        if descriptors and descriptors[0].is_primary:
+            descriptors[0].position_hint = _("Principal")
+        return
+
+    xs = [d.x for d in descriptors]
+    ys = [d.y for d in descriptors]
+    horizontal = (max(xs) - min(xs)) >= (max(ys) - min(ys))
+
+    if horizontal:
+        ordered = sorted(descriptors, key=lambda d: d.x)
+        edge_names = {0: _("Gauche"), len(descriptors) - 1: _("Droite")}
+        middle_name = _("Centre")
+    else:
+        ordered = sorted(descriptors, key=lambda d: d.y)
+        edge_names = {0: _("Haut"), len(descriptors) - 1: _("Bas")}
+        middle_name = _("Centre")
+
+    for rank, d in enumerate(ordered):
+        parts = [edge_names.get(rank, middle_name)]
+        if d.is_primary:
+            parts.append(_("Principal"))
+        d.position_hint = "  ·  ".join(parts)

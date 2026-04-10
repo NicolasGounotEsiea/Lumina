@@ -34,8 +34,9 @@ class _DDCWorker(QObject):
     """
 
     # Emitted on the worker thread → received on the main thread (queued)
-    read_done   = Signal(int, int)  # brightness, contrast
-    read_failed = Signal()
+    read_done    = Signal(int, int)  # brightness, contrast
+    read_failed  = Signal()
+    rgb_read_done = Signal(object)   # tuple[int,int,int] | None
 
     def __init__(self, monitor_handle, monitor_index: int) -> None:
         super().__init__()
@@ -88,6 +89,20 @@ class _DDCWorker(QObject):
         except Exception as e:
             log.debug("DDC power write failed on monitor %d: %s", self._index, e)
 
+    @Slot()
+    def read_rgb(self) -> None:
+        """Read R/G/B gains and emit rgb_read_done (worker thread)."""
+        try:
+            with self._monitor:
+                self._monitor.vcp.set_vcp_feature(VCP_COLOR_PRESET, 0x0B)
+                r = self._monitor.vcp.get_vcp_feature(VCP_RED)[0]
+                g = self._monitor.vcp.get_vcp_feature(VCP_GREEN)[0]
+                b = self._monitor.vcp.get_vcp_feature(VCP_BLUE)[0]
+            self.rgb_read_done.emit((r, g, b))
+        except Exception as e:
+            log.debug("Cannot read RGB for monitor %d: %s", self._index, e)
+            self.rgb_read_done.emit(None)
+
     @Slot(object)                  # rgb: dict {vcp_code: value}
     def apply_rgb_dict(self, rgb: dict) -> None:
         try:
@@ -110,6 +125,7 @@ class MonitorCard(QFrame):
     _sig_rgb      = Signal(object, object, object)
     _sig_power    = Signal(int)
     _sig_rgb_dict = Signal(object)
+    _sig_read_rgb = Signal()           # request an async RGB read
 
     def __init__(self, descriptor: MonitorDescriptor,
                  sync_hook=None, sync_rgb_hook=None, parent=None) -> None:
@@ -135,6 +151,7 @@ class MonitorCard(QFrame):
         self._thread: QThread | None = None
         self._worker: _DDCWorker | None = None
         self.available: bool = True   # False when DDC-CI handle is absent or read fails
+        self._rgb_reading: bool = False  # re-entrance guard for read_rgb()
 
         self._build_ui()
 
@@ -156,6 +173,7 @@ class MonitorCard(QFrame):
         self._sig_rgb.connect(self._worker.apply_rgb)
         self._sig_power.connect(self._worker.apply_power)
         self._sig_rgb_dict.connect(self._worker.apply_rgb_dict)
+        self._sig_read_rgb.connect(self._worker.read_rgb)
 
         # Worker results → UI slots (queued back to main thread)
         self._worker.read_done.connect(self._on_initial_values)
@@ -225,9 +243,17 @@ class MonitorCard(QFrame):
         lbl_g = QLabel(_("γ  Gamma"))
         lbl_g.setObjectName("Subtle")
         lbl_g.setFixedWidth(56)
+        _gamma_tip = _(
+            "Ajuste la luminosité perçue des tons intermédiaires via la carte graphique.\n"
+            "Fonctionne même si le DDC-CI est indisponible.\n"
+            "1.00 = neutre  ·  < 1.00 = plus sombre  ·  > 1.00 = plus clair\n"
+            "Pour un réglage global (tous les écrans), voir la section « GAMMA GPU »."
+        )
+        lbl_g.setToolTip(_gamma_tip)
         self.sl_gamma = QSlider(Qt.Horizontal)
         self.sl_gamma.setRange(60, 240)
         self.sl_gamma.setValue(100)
+        self.sl_gamma.setToolTip(_gamma_tip)
         self.sl_gamma.valueChanged.connect(self._on_gamma_label)
         self.sl_gamma.sliderReleased.connect(self._apply_gamma)
         self.lbl_gamma = QLabel("1.00")
@@ -380,19 +406,32 @@ class MonitorCard(QFrame):
     # ── RGB gains (dispatched to worker thread) ───────────────────────────────
 
     def read_rgb(self) -> tuple[int, int, int] | None:
-        """Read current R/G/B gains synchronously (called infrequently from main thread)."""
-        if not self.monitor:
+        """Read current R/G/B gains via the worker thread.
+
+        Dispatches the DDC read to the worker and waits for the result using
+        a local QEventLoop so the main thread remains responsive (processes
+        events) while the DDC operation is in progress.
+        """
+        if not self.monitor or self._worker is None or self._rgb_reading:
             return None
-        try:
-            with self.monitor:
-                self.monitor.vcp.set_vcp_feature(VCP_COLOR_PRESET, 0x0B)
-                r = self.monitor.vcp.get_vcp_feature(VCP_RED)[0]
-                g = self.monitor.vcp.get_vcp_feature(VCP_GREEN)[0]
-                b = self.monitor.vcp.get_vcp_feature(VCP_BLUE)[0]
-            return (r, g, b)
-        except Exception as e:
-            log.debug("Cannot read RGB for monitor %d: %s", self.index, e)
-            return None
+        from PySide6.QtCore import QEventLoop, QTimer as _QT
+        self._rgb_reading = True
+        loop = QEventLoop()
+        result: list = [None]
+
+        def _on_done(val):
+            result[0] = val
+            loop.quit()
+
+        # SingleShotConnection: auto-disconnects after one delivery
+        self._worker.rgb_read_done.connect(_on_done, Qt.SingleShotConnection)
+        self._sig_read_rgb.emit()
+        # Safety timeout: bail out after 500 ms to avoid deadlock
+        _QT.singleShot(500, loop.quit)
+        loop.exec()
+
+        self._rgb_reading = False
+        return result[0]
 
     def apply_rule_rgb(self, red: int | None, green: int | None, blue: int | None) -> None:
         """Apply R/G/B gain values via DDC-CI (async)."""

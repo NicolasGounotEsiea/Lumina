@@ -80,6 +80,12 @@ _EN: dict[str, str] = {
 
     # ── monitor_enumerate ────────────────────────────────────────────────────
     "Écran détecté":                    "Monitor detected",
+    "Gauche":                           "Left",
+    "Droite":                           "Right",
+    "Centre":                           "Centre",
+    "Haut":                             "Top",
+    "Bas":                              "Bottom",
+    "Principal":                        "Primary",
 
     # ── monitor_card ─────────────────────────────────────────────────────────
     "Activez « DDC/CI » dans le menu OSD (boutons physiques), puis cliquez ↻.":
@@ -91,6 +97,14 @@ _EN: dict[str, str] = {
     "◑  Con.":                          "◑  Con.",
     "γ  Gamma":                         "γ  Gamma",
     "Écran {}  (N/A)":                  "Screen {}  (N/A)",
+    "Ajuste la luminosité perçue des tons intermédiaires via la carte graphique.\n"
+    "Fonctionne même si le DDC-CI est indisponible.\n"
+    "1.00 = neutre  ·  < 1.00 = plus sombre  ·  > 1.00 = plus clair\n"
+    "Pour un réglage global (tous les écrans), voir la section « GAMMA GPU ».":
+        "Adjusts the perceived brightness of mid-tones via the graphics card.\n"
+        "Works even if DDC-CI is unavailable.\n"
+        "1.00 = neutral  ·  < 1.00 = darker  ·  > 1.00 = brighter\n"
+        "For a global setting (all monitors), see the « GPU GAMMA » section.",
 
     # ── app_rules_dialog ──────────────────────────────────────────────────────
     "Profils automatiques par application": "Automatic per-app profiles",
@@ -202,6 +216,101 @@ _EN: dict[str, str] = {
     "DDC-CI indisponible":              "DDC-CI unavailable",
     "Scan impossible : {}":             "Scan failed: {}",
     "Assistant de démarrage…":          "Setup wizard…",
+
+    # ── onboarding — new pages ────────────────────────────────────────────────
+    "🖥  Multi-écrans":                  "🖥  Multi-monitor",
+    "🎮  Mode Jeu":                      "🎮  Gaming mode",
+    "🌙  Mode Nuit":                     "🌙  Night mode",
+    "💡  Vous pouvez relancer ce scan à tout moment via le bouton ↻ "
+    "en haut du panneau principal.":
+        "💡  You can re-run this scan at any time using the ↻ button "
+        "at the top of the main panel.",
+    "Contrôle des écrans":              "Screen control",
+    "Les réglages s'appliquent en temps réel via DDC-CI — sans logiciel de pilote tiers.":
+        "Settings apply in real time via DDC-CI — no third-party driver needed.",
+    "Luminosité & contraste globaux":   "Global brightness & contrast",
+    "Un slider unique ajuste tous vos écrans en même temps. "
+    "Les préréglages Jour (80 %) et Nuit (25 %) sont accessibles en un clic.":
+        "A single slider adjusts all your monitors at once. "
+        "Day (80%) and Night (25%) presets are one click away.",
+    "Synchronisation maître / esclave": "Master / slave synchronisation",
+    "Liez vos écrans : le maître pilote les autres en absolu ou avec un décalage fixe "
+    "(ex. écran secondaire toujours 10 % moins lumineux).":
+        "Link your monitors: the master drives the others absolutely or with a fixed offset "
+        "(e.g. secondary screen always 10% dimmer).",
+    "Mode Focus":                       "Focus mode",
+    "L'écran actif reste à pleine luminosité ; les autres sont atténués du niveau "
+    "que vous choisissez. Utile pour se concentrer sur une seule fenêtre.":
+        "The active screen stays at full brightness; others are dimmed by the amount you choose. "
+        "Useful for focusing on a single window.",
+    "Mode Nuit":                        "Night mode",
+    "Applique une teinte chaude (GPU) sur tous vos écrans pour réduire la lumière bleue "
+    "en soirée. Intensité réglable de 0 à 100 %.":
+        "Applies a warm GPU tint to all your monitors to reduce blue light in the evening. "
+        "Adjustable intensity from 0 to 100%.",
+    "Fonctions avancées":               "Advanced features",
+    "Des outils pour les utilisateurs exigeants et les configurations multi-écrans complexes.":
+        "Tools for power users and complex multi-monitor setups.",
+    "Détection automatique du plein écran : un préréglage de luminosité/contraste "
+    "est appliqué à l'entrée, et les écritures DDC-CI sont suspendues pour ne pas "
+    "interrompre le jeu. Tout est restauré à la sortie.":
+        "Automatic fullscreen detection: a brightness/contrast preset is applied on entry, "
+        "and DDC-CI writes are suspended to avoid interrupting the game. "
+        "Everything is restored on exit.",
+    "Profils par application":          "Per-app profiles",
+    "Associez un préréglage (luminosité, contraste, gamma, gains RGB) à un exécutable. "
+    "Lumina Control détecte automatiquement l'application au premier plan et "
+    "applique les réglages — puis les restaure dès que vous changez d'application.":
+        "Assign a preset (brightness, contrast, gamma, RGB gains) to an executable. "
+        "Lumina Control automatically detects the foreground application and applies "
+        "the settings — then restores them when you switch apps.",
+    "Profils nommés":                   "Named profiles",
+    "Sauvegardez l'état complet de tous vos écrans (luminosité, contraste, gamma) "
+    "sous un nom personnalisé, et rechargez-le en un clic. "
+    "Idéal pour alterner entre une configuration \"Travail\" et \"Cinéma\".":
+        "Save the complete state of all your monitors (brightness, contrast, gamma) "
+        "under a custom name and reload it with one click. "
+        "Ideal for switching between \"Work\" and \"Cinema\" configurations.",
+    "Sauvegarde rapide":                "Quick save",
+    "Mémorisez l'état actuel en un clic avant d'expérimenter, "
+    "et restaurez-le instantanément si le résultat ne vous convient pas.":
+        "Save the current state in one click before experimenting, "
+        "and restore it instantly if the result isn't what you wanted.",
+    "Calibrage RGB & Gamma GPU":        "RGB calibration & GPU gamma",
+    "Ajustez finement les gains Rouge / Vert / Bleu via DDC-CI pour corriger les "
+    "dominantes de couleur. Le gamma GPU (GDI32) agit indépendamment du DDC-CI "
+    "et s'applique même si votre moniteur ne supporte pas DDC.":
+        "Fine-tune Red / Green / Blue gains via DDC-CI to correct colour casts. "
+        "GPU gamma (GDI32) works independently of DDC-CI "
+        "and applies even if your monitor doesn't support DDC.",
+    "Rappel — où trouver chaque fonction": "Quick reference — where to find each feature",
+    "☀  Luminosité globale    → barre en haut du panneau":
+        "☀  Global brightness     → bar at the top of the panel",
+    "🔗  Synchronisation       → section SYNCHRONISATION":
+        "🔗  Sync                  → SYNCHRONISATION section",
+    "🎯  Mode Focus            → section MODE FOCUS":
+        "🎯  Focus mode            → FOCUS MODE section",
+    "🌙  Mode Nuit             → section PARAMÈTRES":
+        "🌙  Night mode            → SETTINGS section",
+    "🎮  Mode Jeu              → section MODE JEU":
+        "🎮  Gaming mode           → GAMING MODE section",
+    "⚙  Profils par app       → section PROFILS AUTOMATIQUES":
+        "⚙  Per-app profiles      → APP PROFILES section",
+    "📁  Profils nommés        → section PROFILS NOMMÉS":
+        "📁  Named profiles        → NAMED PROFILES section",
+    "🎨  Calibrage             → bouton ⚙ sur chaque écran":
+        "🎨  Calibration           → ⚙ button on each monitor card",
+
+    # ── mode priority tooltips ───────────────────────────────────────────────
+    "Suspendu automatiquement quand le Mode Jeu détecte un plein écran.":
+        "Automatically suspended when Gaming mode detects a fullscreen app.",
+    "Priorité maximale : suspend le Mode Focus et les Profils Automatiques dès qu'un jeu passe en plein écran.":
+        "Highest priority: suspends Focus mode and App Profiles as soon as a game goes fullscreen.",
+
+    "Applique un gamma identique à tous les écrans via la carte graphique. "
+    "Pour régler chaque écran indépendamment, utilisez le slider γ sur sa carte.":
+        "Applies the same gamma to all monitors via the graphics card. "
+        "To adjust each monitor independently, use the γ slider on its card.",
 
     # ── gaming mode ──────────────────────────────────────────────────────────
     "Mode Jeu":                         "Gaming mode",

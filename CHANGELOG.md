@@ -5,6 +5,24 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/).
 
 ---
 
+## [1.2.2] — 2026-04-11
+
+### Ajouté
+- **Position des écrans** : `enumerate_monitors()` calcule automatiquement l'étiquette de position (Gauche / Droite / Centre / Haut / Bas / Principal) à partir de la géométrie Windows. Apparaît sur chaque carte, dans le dropdown de synchronisation et dans le wizard. Gère les setups côte à côte (axe X) et empilés (axe Y).
+- **Fenêtre déplaçable** : glisser depuis la barre de titre repositionne le panneau flottant. Le drag est limité à la zone titre via hit-test sur `_title_bar` — les sliders et boutons du contenu ne sont pas affectés.
+- **Priorité des modes dans l'UI** : badge "⚠ Suspendu" visible dans la section Mode Focus quand le Mode Jeu est actif. Tooltips sur les boutons de bascule Focus et Gaming décrivant la hiérarchie (Gaming > Focus > Profils Auto).
+- **Assistant de démarrage enrichi** : 5 étapes au lieu de 4 — ajout d'une page "Contrôle des écrans" (luminosité globale, sync, focus, nuit) et d'une page "Fonctions avancées" (mode jeu, profils app, profils nommés, sauvegarde rapide, calibrage). La page finale inclut un tableau de référence rapide "où trouver chaque fonction". Tip DDC-CI : indique que le scan est relançable via ↻.
+- **Tooltips Gamma** : survol du slider `γ Gamma` sur chaque carte affiche une explication en langage clair (rôle GPU, valeurs de référence, différence avec le GAMMA GPU global). Description ajoutée dans l'en-tête de la section GAMMA GPU.
+
+### Amélioré
+- **Slider luminosité globale en temps réel** : connecté sur `valueChanged` au lieu de `sliderReleased`. Les cartes suivent le curseur pendant le glissement ; les debounce 150 ms des cards protègent le bus DDC-CI contre le flood.
+- **`read_rgb()` asynchrone** : la lecture des gains RGB est maintenant déléguée au `_DDCWorker` via un signal cross-thread. Un `QEventLoop` local avec timeout 500 ms évite tout gel de l'UI. Un garde `_rgb_reading` empêche la ré-entrance depuis le poll timer.
+
+### Corrigé
+- Thread de scan DDC-CI de l'onboarding non nettoyé : `deleteLater()` connecté au signal `finished` du `QThread`.
+
+---
+
 ## [1.2.1] — 2026-04-08
 
 ### Ajouté

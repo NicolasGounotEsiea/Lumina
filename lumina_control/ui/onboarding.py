@@ -4,14 +4,14 @@ import logging
 from PySide6.QtCore import Qt, QObject, QThread, QTimer, Signal
 from PySide6.QtWidgets import (
     QDialog, QFrame, QHBoxLayout, QLabel, QPushButton,
-    QStackedWidget, QVBoxLayout, QWidget,
+    QScrollArea, QStackedWidget, QVBoxLayout, QWidget,
 )
 
 from lumina_control.i18n import _
 
 log = logging.getLogger(__name__)
 
-_STEP_COUNT = 4
+_STEP_COUNT = 5
 
 
 class _ScanWorker(QObject):
@@ -34,7 +34,7 @@ class OnboardingDialog(QDialog):
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
         self.setWindowTitle(_("Bienvenue dans Lumina Control"))
-        self.setFixedWidth(500)
+        self.setFixedWidth(520)
         self.setWindowFlags(Qt.Dialog | Qt.WindowCloseButtonHint)
         self._build_ui()
 
@@ -48,7 +48,8 @@ class OnboardingDialog(QDialog):
         self._stack = QStackedWidget()
         self._stack.addWidget(self._page_welcome())
         self._stack.addWidget(self._page_ddc())
-        self._stack.addWidget(self._page_features())
+        self._stack.addWidget(self._page_screen_control())
+        self._stack.addWidget(self._page_advanced())
         self._stack.addWidget(self._page_done())
         layout.addWidget(self._stack)
 
@@ -84,6 +85,77 @@ class OnboardingDialog(QDialog):
 
         self._update_nav()
 
+    # ── Shared helpers ────────────────────────────────────────────────────────
+
+    def _feature_card(self, icon: str, title: str, desc: str) -> QFrame:
+        """Return a styled card widget for a feature entry."""
+        card = QFrame()
+        card.setObjectName("Card")
+        card_l = QHBoxLayout(card)
+        card_l.setContentsMargins(14, 10, 14, 10)
+        card_l.setSpacing(12)
+
+        ic = QLabel(icon)
+        ic.setFixedWidth(28)
+        ic.setStyleSheet("font-size: 20px;")
+        ic.setAlignment(Qt.AlignTop | Qt.AlignHCenter)
+
+        text_l = QVBoxLayout()
+        text_l.setSpacing(3)
+        lbl_t = QLabel(title)
+        lbl_t.setObjectName("Title")
+        lbl_d = QLabel(desc)
+        lbl_d.setObjectName("Subtle")
+        lbl_d.setWordWrap(True)
+        text_l.addWidget(lbl_t)
+        text_l.addWidget(lbl_d)
+
+        card_l.addWidget(ic, 0, Qt.AlignTop)
+        card_l.addLayout(text_l)
+        return card
+
+    def _scrollable_page(self, title: str, subtitle: str) -> tuple[QWidget, QVBoxLayout]:
+        """Return (page_widget, inner_layout) with a scroll area pre-configured."""
+        page = QWidget()
+        page_l = QVBoxLayout(page)
+        page_l.setContentsMargins(0, 0, 0, 0)
+        page_l.setSpacing(0)
+
+        # Fixed header (no scroll)
+        hdr = QWidget()
+        hdr_l = QVBoxLayout(hdr)
+        hdr_l.setContentsMargins(32, 24, 32, 12)
+        hdr_l.setSpacing(6)
+        lbl_t = QLabel(title)
+        lbl_t.setStyleSheet("font-size: 16px; font-weight: 700;")
+        hdr_l.addWidget(lbl_t)
+        lbl_s = QLabel(subtitle)
+        lbl_s.setObjectName("Subtle")
+        lbl_s.setWordWrap(True)
+        hdr_l.addWidget(lbl_s)
+        page_l.addWidget(hdr)
+
+        sep = QFrame()
+        sep.setObjectName("Separator")
+        sep.setFrameShape(QFrame.HLine)
+        page_l.addWidget(sep)
+
+        # Scrollable body
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        scroll.setFrameShape(QFrame.NoFrame)
+
+        inner = QWidget()
+        inner_l = QVBoxLayout(inner)
+        inner_l.setContentsMargins(32, 16, 32, 20)
+        inner_l.setSpacing(10)
+        scroll.setWidget(inner)
+        page_l.addWidget(scroll)
+
+        return page, inner_l
+
     # ── Pages ─────────────────────────────────────────────────────────────────
 
     def _page_welcome(self) -> QWidget:
@@ -114,6 +186,23 @@ class OnboardingDialog(QDialog):
         desc.setWordWrap(True)
         desc.setAlignment(Qt.AlignCenter)
         l.addWidget(desc)
+
+        # Quick summary pills
+        pills_w = QWidget()
+        pills_l = QHBoxLayout(pills_w)
+        pills_l.setContentsMargins(0, 8, 0, 0)
+        pills_l.setSpacing(8)
+        pills_l.setAlignment(Qt.AlignCenter)
+        for txt in [_("🖥  Multi-écrans"), _("🎮  Mode Jeu"), _("🌙  Mode Nuit")]:
+            p = QLabel(txt)
+            p.setObjectName("ValueBadge")
+            p.setAlignment(Qt.AlignCenter)
+            p.setStyleSheet(
+                "padding: 4px 12px; border-radius: 12px;"
+                "font-size: 12px; font-weight: 600;"
+            )
+            pills_l.addWidget(p)
+        l.addWidget(pills_w)
 
         l.addStretch()
         return w
@@ -156,56 +245,76 @@ class OnboardingDialog(QDialog):
         self._ddc_warn.setWordWrap(True)
         l.addWidget(self._ddc_warn)
 
+        sep2 = QFrame()
+        sep2.setObjectName("Separator")
+        sep2.setFrameShape(QFrame.HLine)
+        l.addWidget(sep2)
+
+        tip = QLabel(_(
+            "💡  Vous pouvez relancer ce scan à tout moment via le bouton ↻ "
+            "en haut du panneau principal."
+        ))
+        tip.setObjectName("Subtle")
+        tip.setWordWrap(True)
+        l.addWidget(tip)
+
         l.addStretch()
         return w
 
-    def _page_features(self) -> QWidget:
-        w = QWidget()
-        l = QVBoxLayout(w)
-        l.setContentsMargins(32, 28, 32, 16)
-        l.setSpacing(12)
-
-        title = QLabel(_("Fonctionnalités clés"))
-        title.setStyleSheet("font-size: 16px; font-weight: 700;")
-        l.addWidget(title)
-
+    def _page_screen_control(self) -> QWidget:
+        page, inner = self._scrollable_page(
+            _("Contrôle des écrans"),
+            _("Les réglages s'appliquent en temps réel via DDC-CI — sans logiciel de pilote tiers."),
+        )
         features = [
-            ("☀", _("Luminosité & contraste"),
-             _("Contrôlez chaque écran individuellement ou synchronisez-les en maître/esclave avec décalages relatifs.")),
-            ("⚙", _("Profils par application"),
-             _("Préréglage automatique dès qu'une application spécifique est au premier plan — luminosité, contraste, gamma, gains RGB.")),
-            ("🎮", _("Mode Jeu"),
-             _("Détection automatique du plein écran : préréglage appliqué et écritures DDC-CI suspendues pour ne pas interrompre le jeu.")),
+            ("☀", _("Luminosité & contraste globaux"),
+             _("Un slider unique ajuste tous vos écrans en même temps. "
+               "Les préréglages Jour (80 %) et Nuit (25 %) sont accessibles en un clic.")),
+            ("🔗", _("Synchronisation maître / esclave"),
+             _("Liez vos écrans : le maître pilote les autres en absolu ou avec un décalage fixe "
+               "(ex. écran secondaire toujours 10 % moins lumineux).")),
+            ("🎯", _("Mode Focus"),
+             _("L'écran actif reste à pleine luminosité ; les autres sont atténués du niveau "
+               "que vous choisissez. Utile pour se concentrer sur une seule fenêtre.")),
+            ("🌙", _("Mode Nuit"),
+             _("Applique une teinte chaude (GPU) sur tous vos écrans pour réduire la lumière bleue "
+               "en soirée. Intensité réglable de 0 à 100 %.")),
         ]
+        for icon, feat_title, feat_desc in features:
+            inner.addWidget(self._feature_card(icon, feat_title, feat_desc))
+        inner.addStretch()
+        return page
 
-        for icon_txt, feat_title, feat_desc in features:
-            card = QFrame()
-            card.setObjectName("Card")
-            card_l = QHBoxLayout(card)
-            card_l.setContentsMargins(14, 10, 14, 10)
-            card_l.setSpacing(12)
-
-            ic = QLabel(icon_txt)
-            ic.setFixedWidth(28)
-            ic.setStyleSheet("font-size: 22px;")
-            ic.setAlignment(Qt.AlignTop | Qt.AlignHCenter)
-
-            text_l = QVBoxLayout()
-            text_l.setSpacing(3)
-            lbl_t = QLabel(feat_title)
-            lbl_t.setObjectName("Title")
-            lbl_d = QLabel(feat_desc)
-            lbl_d.setObjectName("Subtle")
-            lbl_d.setWordWrap(True)
-            text_l.addWidget(lbl_t)
-            text_l.addWidget(lbl_d)
-
-            card_l.addWidget(ic, 0, Qt.AlignTop)
-            card_l.addLayout(text_l)
-            l.addWidget(card)
-
-        l.addStretch()
-        return w
+    def _page_advanced(self) -> QWidget:
+        page, inner = self._scrollable_page(
+            _("Fonctions avancées"),
+            _("Des outils pour les utilisateurs exigeants et les configurations multi-écrans complexes."),
+        )
+        features = [
+            ("🎮", _("Mode Jeu"),
+             _("Détection automatique du plein écran : un préréglage de luminosité/contraste "
+               "est appliqué à l'entrée, et les écritures DDC-CI sont suspendues pour ne pas "
+               "interrompre le jeu. Tout est restauré à la sortie.")),
+            ("⚙", _("Profils par application"),
+             _("Associez un préréglage (luminosité, contraste, gamma, gains RGB) à un exécutable. "
+               "Lumina Control détecte automatiquement l'application au premier plan et "
+               "applique les réglages — puis les restaure dès que vous changez d'application.")),
+            ("📁", _("Profils nommés"),
+             _("Sauvegardez l'état complet de tous vos écrans (luminosité, contraste, gamma) "
+               "sous un nom personnalisé, et rechargez-le en un clic. "
+               "Idéal pour alterner entre une configuration \"Travail\" et \"Cinéma\".")),
+            ("💾", _("Sauvegarde rapide"),
+             _("Mémorisez l'état actuel en un clic avant d'expérimenter, "
+               "et restaurez-le instantanément si le résultat ne vous convient pas.")),
+            ("🎨", _("Calibrage RGB & Gamma GPU"),
+             _("Ajustez finement les gains Rouge / Vert / Bleu via DDC-CI pour corriger les "
+               "dominantes de couleur. Le gamma GPU (GDI32) agit indépendamment du DDC-CI "
+               "et s'applique même si votre moniteur ne supporte pas DDC.")),
+        ]
+        for icon, feat_title, feat_desc in features:
+            inner.addWidget(self._feature_card(icon, feat_title, feat_desc))
+        inner.addStretch()
+        return page
 
     def _page_done(self) -> QWidget:
         w = QWidget()
@@ -235,6 +344,32 @@ class OnboardingDialog(QDialog):
         desc.setAlignment(Qt.AlignCenter)
         l.addWidget(desc)
 
+        # Quick reminder of key sections
+        reminder = QFrame()
+        reminder.setObjectName("Card")
+        rem_l = QVBoxLayout(reminder)
+        rem_l.setContentsMargins(16, 12, 16, 12)
+        rem_l.setSpacing(6)
+        rem_title = QLabel(_("Rappel — où trouver chaque fonction"))
+        rem_title.setObjectName("Title")
+        rem_l.addWidget(rem_title)
+        tips = [
+            _("☀  Luminosité globale    → barre en haut du panneau"),
+            _("🔗  Synchronisation       → section SYNCHRONISATION"),
+            _("🎯  Mode Focus            → section MODE FOCUS"),
+            _("🌙  Mode Nuit             → section PARAMÈTRES"),
+            _("🎮  Mode Jeu              → section MODE JEU"),
+            _("⚙  Profils par app       → section PROFILS AUTOMATIQUES"),
+            _("📁  Profils nommés        → section PROFILS NOMMÉS"),
+            _("🎨  Calibrage             → bouton ⚙ sur chaque écran"),
+        ]
+        for tip in tips:
+            lbl = QLabel(tip)
+            lbl.setObjectName("Subtle")
+            lbl.setStyleSheet("font-size: 12px;")
+            rem_l.addWidget(lbl)
+        l.addWidget(reminder)
+
         l.addStretch()
         return w
 
@@ -253,6 +388,7 @@ class OnboardingDialog(QDialog):
         self._scan_worker.done.connect(self._scan_thread.quit)
         self._scan_worker.failed.connect(self._scan_thread.quit)
         self._scan_thread.finished.connect(self._scan_worker.deleteLater)
+        self._scan_thread.finished.connect(self._scan_thread.deleteLater)
         self._scan_thread.start()
 
     def _on_scan_done(self, descs: list) -> None:

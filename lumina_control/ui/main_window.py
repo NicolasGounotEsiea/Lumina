@@ -143,6 +143,8 @@ class MainWindow(QWidget):
         self._gaming_exit_timer.setInterval(2000)
         self._gaming_exit_timer.timeout.connect(self._exit_gaming_mode)
 
+        self._drag_pos = None  # QPoint | None — set while dragging from title bar
+
         self._build_ui()
         self._apply_loaded_settings()
         self.refresh()
@@ -212,6 +214,7 @@ class MainWindow(QWidget):
         header_l.addWidget(btn_refresh)
         header_l.addWidget(btn_close)
         container_l.addWidget(header)
+        self._title_bar = header  # reference used for drag-to-move hit testing
 
         sep_top = QFrame()
         sep_top.setObjectName("Separator")
@@ -314,9 +317,13 @@ class MainWindow(QWidget):
         self.sl_glob = QSlider(Qt.Horizontal)
         self.sl_glob.setRange(0, 100)
         self.sl_glob.setValue(50)
-        self.sl_glob.sliderReleased.connect(self._apply_glob)
+        # Apply on every value change (not just release) so cards track the
+        # global slider in real time.  Each card's 150 ms debounce timer
+        # absorbs the rapid events — DDC-CI writes only fire after the user
+        # stops dragging, keeping the UI perfectly responsive.
         self.sl_glob.valueChanged.connect(lambda v: self.lbl_glob_val.setText(f"{v}%"))
         self.sl_glob.valueChanged.connect(self.brightness_changed)
+        self.sl_glob.valueChanged.connect(lambda _: self._apply_glob())
         sl.addWidget(self.sl_glob)
 
         self._brightness_strip = strip
@@ -437,6 +444,12 @@ class MainWindow(QWidget):
     def _build_gamma_section(self) -> None:
         sec = _CollapsibleSection(_("GAMMA GPU"), expanded=False)
 
+        desc = QLabel(_("Applique un gamma identique à tous les écrans via la carte graphique. "
+                         "Pour régler chaque écran indépendamment, utilisez le slider γ sur sa carte."))
+        desc.setObjectName("Subtle")
+        desc.setWordWrap(True)
+        sec.add_widget(desc)
+
         row = QHBoxLayout()
         lbl = QLabel(_("Gamma"))
         lbl.setObjectName("Subtle")
@@ -487,6 +500,7 @@ class MainWindow(QWidget):
         self.btn_focus.setObjectName("FocusToggle")
         self.btn_focus.setCheckable(True)
         self.btn_focus.setCursor(Qt.PointingHandCursor)
+        self.btn_focus.setToolTip(_("Suspendu automatiquement quand le Mode Jeu détecte un plein écran."))
         self.btn_focus.toggled.connect(lambda v: self.set_focus_enabled(v, source="ui"))
         h.addWidget(lbl_help)
         h.addStretch()
@@ -511,6 +525,11 @@ class MainWindow(QWidget):
         row.addWidget(self.lbl_focus_dim)
         sec.add_layout(row)
 
+        # Conflict badge — visible when Gaming mode overrides Focus mode
+        self._lbl_focus_conflict = QLabel("")
+        self._lbl_focus_conflict.setObjectName("SyncStatus")
+        sec.add_widget(self._lbl_focus_conflict)
+
         self.main_l.addWidget(sec)
 
     def _build_gaming_section(self) -> None:
@@ -523,6 +542,7 @@ class MainWindow(QWidget):
         self.btn_gaming.setObjectName("GamingToggle")
         self.btn_gaming.setCheckable(True)
         self.btn_gaming.setCursor(Qt.PointingHandCursor)
+        self.btn_gaming.setToolTip(_("Priorité maximale : suspend le Mode Focus et les Profils Automatiques dès qu'un jeu passe en plein écran."))
         self.btn_gaming.toggled.connect(lambda v: self.set_gaming_mode_enabled(v, source="ui"))
         h.addWidget(lbl_help)
         h.addStretch()
@@ -843,6 +863,30 @@ class MainWindow(QWidget):
 
     def paintEvent(self, event) -> None:
         pass  # Fully transparent root; Container handles its own background
+
+    # ── Drag-to-move (title bar only) ────────────────────────────────────────
+
+    def mousePressEvent(self, event) -> None:
+        if event.button() == Qt.LeftButton:
+            pos = event.position().toPoint()
+            title_pos = self._title_bar.mapFrom(self, pos)
+            if self._title_bar.rect().contains(title_pos):
+                self._drag_pos = (
+                    event.globalPosition().toPoint() - self.frameGeometry().topLeft()
+                )
+            else:
+                self._drag_pos = None
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event) -> None:
+        if self._drag_pos is not None and event.buttons() & Qt.LeftButton:
+            self.move(event.globalPosition().toPoint() - self._drag_pos)
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event) -> None:
+        if event.button() == Qt.LeftButton:
+            self._drag_pos = None
+        super().mouseReleaseEvent(event)
 
     def showEvent(self, event) -> None:
         super().showEvent(event)
@@ -1295,6 +1339,19 @@ class MainWindow(QWidget):
         # Sync section badge (also checks gaming mode)
         if hasattr(self, "_lbl_sync_status"):
             self._update_sync_ui()
+
+        # Focus section: show when Gaming mode is actively overriding it
+        if hasattr(self, "_lbl_focus_conflict"):
+            if self._gaming_active and self.focus_enabled:
+                f_text  = _("⚠ Suspendu — Mode Jeu actif")
+                f_state = "warning"
+            else:
+                f_text  = ""
+                f_state = ""
+            self._lbl_focus_conflict.setText(f_text)
+            self._lbl_focus_conflict.setProperty("state", f_state)
+            self._lbl_focus_conflict.style().unpolish(self._lbl_focus_conflict)
+            self._lbl_focus_conflict.style().polish(self._lbl_focus_conflict)
 
         # App rules conflict badge
         if not hasattr(self, "_lbl_rules_conflict"):
