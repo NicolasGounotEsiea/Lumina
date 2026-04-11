@@ -5,6 +5,24 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/).
 
 ---
 
+## [1.2.3] — 2026-04-11
+
+### Ajouté
+- **Délai Focus** : slider 0–5 s dans la section MODE FOCUS. Quand un changement d'écran actif est détecté, l'atténuation est retardée de ce délai avant de s'appliquer — évite le flickering lors d'un Alt+Tab rapide. 0 s = comportement immédiat (défaut). Persisté dans `settings.json`.
+- **Exclusions du Mode Jeu** : champ texte dans la section MODE JEU pour lister les processus exclus (séparés par des virgules). Ces processus ne déclenchent jamais le mode jeu même en plein écran — utile pour `afterfx.exe` (rendus After Effects), `resolve.exe`, etc. Valeur par défaut : `afterfx.exe`. Persisté dans `settings.json`.
+- **`afterfx.exe` dans les règles par défaut** : règle `After Effects — bri 80 %, con 55 %, γ 1.0` ajoutée à `DEFAULT_RULES` pour les nouveaux utilisateurs.
+- **Bouton `?`** : les descriptions textuelles longues dans les sections GAMMA GPU et MODE JEU sont remplacées par un bouton `?` circulaire — l'info s'affiche au survol ou au clic, sans encombrer le panneau.
+
+### Amélioré
+- **Mode Jeu ciblé sur l'écran du jeu** : le préréglage bri/con et la suspension DDC-CI s'appliquent désormais uniquement à l'écran contenant le jeu (détecté via `GetMonitorInfoW`). Les autres écrans restent entièrement libres pendant la session — l'utilisateur peut ajuster Discord, OBS ou tout monitoring sans attendre la fin de la partie. Fallback sur tous les écrans si la détection échoue.
+- **Message DDC-CI indisponible** : la carte N/A et le banner mentionnent explicitement les écrans intégrés (laptop) comme cause normale, et rappellent que le slider γ reste disponible.
+
+### Corrigé
+- **Conflit App Rules ↔ Mode Jeu en alt-tab** : les App Rules reprenaient pendant les 2 s du timer de sortie du mode jeu, causant un flickering de luminosité à chaque alt-tab. La suppression couvre désormais toute la fenêtre de debounce (`_gaming_exit_timer.isActive()`).
+- **Panneau devant les jeux fenêtrés** : masqué automatiquement à l'entrée du mode jeu pour ne pas s'afficher sur les jeux en borderless/windowed-fullscreen.
+
+---
+
 ## [1.2.2] — 2026-04-11
 
 ### Ajouté
@@ -13,21 +31,13 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/).
 - **Priorité des modes dans l'UI** : badge "⚠ Suspendu" visible dans la section Mode Focus quand le Mode Jeu est actif. Tooltips sur les boutons de bascule Focus et Gaming décrivant la hiérarchie (Gaming > Focus > Profils Auto).
 - **Assistant de démarrage enrichi** : 5 étapes au lieu de 4 — ajout d'une page "Contrôle des écrans" (luminosité globale, sync, focus, nuit) et d'une page "Fonctions avancées" (mode jeu, profils app, profils nommés, sauvegarde rapide, calibrage). La page finale inclut un tableau de référence rapide "où trouver chaque fonction". Tip DDC-CI : indique que le scan est relançable via ↻.
 - **Tooltips Gamma** : survol du slider `γ Gamma` sur chaque carte affiche une explication en langage clair (rôle GPU, valeurs de référence, différence avec le GAMMA GPU global). Description ajoutée dans l'en-tête de la section GAMMA GPU.
-- **Délai Focus** : slider 0–5 s dans la section MODE FOCUS. Quand un changement d'écran actif est détecté, l'atténuation est retardée de ce délai avant de s'appliquer — évite le flickering lors d'un Alt+Tab rapide. 0 s = comportement immédiat (défaut). Persisté dans `settings.json`.
-- **Exclusions du Mode Jeu** : champ texte dans la section MODE JEU pour lister les processus exclus (séparés par des virgules). Ces processus ne déclenchent jamais le mode jeu même en plein écran — utile pour `afterfx.exe` (rendus After Effects), `resolve.exe`, etc. Valeur par défaut : `afterfx.exe`. Persisté dans `settings.json`.
-- **`afterfx.exe` dans les règles par défaut** : règle `After Effects — bri 80 %, con 55 %, γ 1.0` ajoutée à `DEFAULT_RULES` pour les nouveaux utilisateurs.
 
 ### Amélioré
 - **Slider luminosité globale en temps réel** : connecté sur `valueChanged` au lieu de `sliderReleased`. Les cartes suivent le curseur pendant le glissement ; les debounce 150 ms des cards protègent le bus DDC-CI contre le flood.
 - **`read_rgb()` asynchrone** : la lecture des gains RGB est maintenant déléguée au `_DDCWorker` via un signal cross-thread. Un `QEventLoop` local avec timeout 500 ms évite tout gel de l'UI. Un garde `_rgb_reading` empêche la ré-entrance depuis le poll timer.
-- **Message DDC-CI indisponible** : la carte N/A et le banner du panneau mentionnent explicitement les écrans intégrés (laptop) comme cause normale de l'absence de DDC-CI, et rappellent que le slider γ reste utilisable.
-- **Transparence du Mode Jeu** : description technique dans la section MODE JEU — détection plein écran, suspension DDC-CI de l'écran du jeu uniquement, restauration à la sortie.
-- **Mode Jeu ciblé sur l'écran du jeu** : le préréglage bri/con et la suspension DDC-CI s'appliquent désormais uniquement à l'écran contenant le jeu (détecté via `GetMonitorInfoW`). Les autres écrans restent entièrement libres pendant la session — l'utilisateur peut ajuster Discord, OBS ou tout autre monitoring sans attendre la fin de la partie. Fallback sur tous les écrans si la détection échoue.
 
 ### Corrigé
 - Thread de scan DDC-CI de l'onboarding non nettoyé : `deleteLater()` connecté au signal `finished` du `QThread`.
-- **Conflit App Rules ↔ Mode Jeu en alt-tab** : les App Rules restaient actives pendant les 2 s du timer de sortie du mode jeu, causant un flickering de luminosité (ex. règle Discord à 65 % vs preset jeu à 85 %) à chaque alt-tab. La suppression des règles couvre désormais toute la fenêtre de debounce (`_gaming_exit_timer.isActive()`), pas seulement `_gaming_active`.
-- **Panneau devant les jeux fenêtrés** : le panneau principal est maintenant masqué automatiquement à l'entrée du mode jeu (`_enter_gaming_mode` appelle `self.hide()`), évitant qu'il reste visible sur les jeux en mode borderless/windowed-fullscreen.
 
 ---
 
