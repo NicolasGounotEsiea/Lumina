@@ -87,6 +87,14 @@ _EN: dict[str, str] = {
     "Bas":                              "Bottom",
     "Principal":                        "Primary",
 
+    # ── monitor_card — write warning ─────────────────────────────────────────
+    "⚠  Réglages sans effet — le moniteur refuse les commandes DDC-CI.\n"
+    "Cause probable : un preset image (Game / FPS / Cinema) est actif dans l'OSD.\n"
+    "Appuyez sur le bouton physique du moniteur → Menu Image → choisissez le mode Utilisateur ou Standard.":
+        "⚠  Settings have no effect — the monitor is rejecting DDC-CI commands.\n"
+        "Likely cause: a picture preset (Game / FPS / Cinema) is active in the OSD.\n"
+        "Press the physical button on your monitor → Picture menu → select User or Standard mode.",
+
     # ── monitor_card ─────────────────────────────────────────────────────────
     "Les écrans intégrés (laptop) ne supportent pas DDC-CI. "
     "Pour un écran externe : activez « DDC/CI » dans le menu OSD (boutons physiques) puis cliquez ↻.\n"

@@ -289,6 +289,16 @@ QLabel#NAHint {{
     color: {mute};
 }}
 
+/* Write-blocked warning inside a DDC-capable card */
+QLabel#WriteWarnLabel {{
+    font-size: 11px;
+    color: #FCB900;
+    background: rgba(252,185,0,0.08);
+    border: 1px solid rgba(252,185,0,0.30);
+    border-radius: 5px;
+    padding: 6px 8px;
+}}
+
 /* DDC-CI missing banner above monitor list */
 QLabel#DDCBanner {{
     font-size: 11px;

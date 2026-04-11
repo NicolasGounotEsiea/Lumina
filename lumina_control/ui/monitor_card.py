@@ -34,9 +34,10 @@ class _DDCWorker(QObject):
     """
 
     # Emitted on the worker thread → received on the main thread (queued)
-    read_done    = Signal(int, int)  # brightness, contrast
-    read_failed  = Signal()
-    rgb_read_done = Signal(object)   # tuple[int,int,int] | None
+    read_done     = Signal(int, int)  # brightness, contrast
+    read_failed   = Signal()
+    rgb_read_done = Signal(object)    # tuple[int,int,int] | None
+    write_failed  = Signal()          # emitted when a bri/con write is rejected by the monitor
 
     def __init__(self, monitor_handle, monitor_index: int) -> None:
         super().__init__()
@@ -64,6 +65,7 @@ class _DDCWorker(QObject):
                     self._monitor.set_contrast(con)
         except Exception as e:
             log.debug("DDC bri/con write failed on monitor %d: %s", self._index, e)
+            self.write_failed.emit()
 
     @Slot(object, object, object)  # r, g, b: int|None
     def apply_rgb(self, r, g, b) -> None:
@@ -178,6 +180,7 @@ class MonitorCard(QFrame):
         # Worker results → UI slots (queued back to main thread)
         self._worker.read_done.connect(self._on_initial_values)
         self._worker.read_failed.connect(self._mark_unavailable)
+        self._worker.write_failed.connect(self._on_write_failed)
 
         self._thread.finished.connect(self._worker.deleteLater)
         self._thread.start()
@@ -236,6 +239,17 @@ class MonitorCard(QFrame):
 
         self._add_slider_row(body_l, _("☀  Lum."), self._on_brightness_change, "bri")
         self._add_slider_row(body_l, _("◑  Con."), self._on_contrast_change,   "con")
+
+        # Write-blocked warning — shown when the monitor rejects DDC-CI writes
+        self._lbl_write_warn = QLabel(_(
+            "⚠  Réglages sans effet — le moniteur refuse les commandes DDC-CI.\n"
+            "Cause probable : un preset image (Game / FPS / Cinema) est actif dans l'OSD.\n"
+            "Appuyez sur le bouton physique du moniteur → Menu Image → choisissez le mode Utilisateur ou Standard."
+        ))
+        self._lbl_write_warn.setObjectName("WriteWarnLabel")
+        self._lbl_write_warn.setWordWrap(True)
+        self._lbl_write_warn.setVisible(False)
+        body_l.addWidget(self._lbl_write_warn)
 
         # Gamma slider (GPU-based, independent of DDC-CI)
         row_g = QHBoxLayout()
@@ -325,6 +339,11 @@ class MonitorCard(QFrame):
             sl.setValue(v)
             sl.blockSignals(False)
             val.setText(str(v))
+
+    @Slot()
+    def _on_write_failed(self) -> None:
+        """Show the write-blocked warning when the monitor rejects a DDC-CI write."""
+        self._lbl_write_warn.setVisible(True)
 
     @Slot()
     def _mark_unavailable(self) -> None:
