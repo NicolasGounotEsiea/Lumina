@@ -285,7 +285,9 @@ class MonitorCard(QFrame):
         fl.addWidget(title)
 
         hint = QLabel(_(
-            "Activez « DDC/CI » dans le menu OSD (boutons physiques), puis cliquez ↻."
+            "Les écrans intégrés (laptop) ne supportent pas DDC-CI. "
+            "Pour un écran externe : activez « DDC/CI » dans le menu OSD (boutons physiques) puis cliquez ↻.\n"
+            "Le slider γ Gamma reste disponible sur tous les écrans."
         ))
         hint.setObjectName("NAHint")
         hint.setWordWrap(True)

@@ -25,6 +25,8 @@ DEFAULT_SETTINGS: dict = {
     "gaming_enabled":    False,
     "gaming_brightness": 80,
     "gaming_contrast":   65,
+    "gaming_exclusions": ["afterfx.exe"],   # processes that never trigger gaming mode
+    "focus_delay":       0,                 # seconds before focus dim kicks in (0 = instant)
 }
 
 

@@ -7,7 +7,7 @@ from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QApplication, QCheckBox, QComboBox, QFileDialog,
     QFrame, QGraphicsDropShadowEffect, QHBoxLayout, QLabel,
-    QLineEdit, QPushButton, QScrollArea, QSlider, QVBoxLayout, QWidget,
+    QLineEdit, QPushButton, QScrollArea, QSlider, QToolTip, QVBoxLayout, QWidget,
 )
 
 from lumina_control.config import (
@@ -21,8 +21,8 @@ from lumina_control.rules_engine import RulesEngine
 from lumina_control import startup as _startup
 from lumina_control.updater import UpdateChecker
 from lumina_control.utils import (
-    get_active_screen_index, invalidate_monitors_cache,
-    is_fullscreen_foreground, wake_all_monitors,
+    get_active_screen_index, get_foreground_process, get_foreground_window_monitor,
+    invalidate_monitors_cache, is_fullscreen_foreground, wake_all_monitors,
 )
 from lumina_control.monitor_enumerate import enumerate_monitors
 from lumina_control.ui.monitor_card import MonitorCard
@@ -111,6 +111,11 @@ class MainWindow(QWidget):
         self.gaming_enabled        = s["gaming_enabled"]
         self.gaming_brightness     = s["gaming_brightness"]
         self.gaming_contrast       = s["gaming_contrast"]
+        self.focus_delay           = int(s["focus_delay"])
+        # Exclusion set — processes that never trigger gaming mode (matched lowercase)
+        self._gaming_exclusions: set[str] = {
+            p.strip().lower() for p in s["gaming_exclusions"] if p.strip()
+        }
 
         # App rules engine
         self._rule_mgr = AppRuleManager(get_rules_path())
@@ -136,12 +141,17 @@ class MainWindow(QWidget):
         self.gaming_action                   = None  # QAction from tray
         self._gaming_active:      bool              = False
         self._gaming_fs_ticks:    int               = 0
+        self._gaming_device:      str | None        = None   # device_name of the game screen
         self._pre_gaming_bri:     dict[int, int]    = {}
         self._pre_gaming_con:     dict[int, int]    = {}
         self._gaming_exit_timer                     = QTimer(self)
         self._gaming_exit_timer.setSingleShot(True)
         self._gaming_exit_timer.setInterval(2000)
         self._gaming_exit_timer.timeout.connect(self._exit_gaming_mode)
+
+        self._focus_delay_timer                     = QTimer(self)
+        self._focus_delay_timer.setSingleShot(True)
+        self._focus_delay_timer.timeout.connect(lambda: self._apply_focus(force=True))
 
         self._drag_pos = None  # QPoint | None — set while dragging from title bar
 
@@ -444,12 +454,6 @@ class MainWindow(QWidget):
     def _build_gamma_section(self) -> None:
         sec = _CollapsibleSection(_("GAMMA GPU"), expanded=False)
 
-        desc = QLabel(_("Applique un gamma identique à tous les écrans via la carte graphique. "
-                         "Pour régler chaque écran indépendamment, utilisez le slider γ sur sa carte."))
-        desc.setObjectName("Subtle")
-        desc.setWordWrap(True)
-        sec.add_widget(desc)
-
         row = QHBoxLayout()
         lbl = QLabel(_("Gamma"))
         lbl.setObjectName("Subtle")
@@ -466,6 +470,10 @@ class MainWindow(QWidget):
         row.addWidget(lbl)
         row.addWidget(self.sl_gamma)
         row.addWidget(self.lbl_gamma_val)
+        row.addWidget(self._help_btn(_(
+            "Applique un gamma identique à tous les écrans via la carte graphique. "
+            "Pour régler chaque écran indépendamment, utilisez le slider γ sur sa carte."
+        )))
         sec.add_layout(row)
 
         h_btn = QHBoxLayout()
@@ -525,6 +533,25 @@ class MainWindow(QWidget):
         row.addWidget(self.lbl_focus_dim)
         sec.add_layout(row)
 
+        # Focus delay — debounce before dimming (avoids flicker on rapid alt-tab)
+        delay_row = QHBoxLayout()
+        lbl_delay = QLabel(_("Délai Focus"))
+        lbl_delay.setObjectName("Subtle")
+        lbl_delay.setFixedWidth(76)
+        lbl_delay.setToolTip(_("Délai avant d'atténuer les écrans inactifs — évite le flickering lors d'un Alt+Tab rapide."))
+        self.sl_focus_delay = QSlider(Qt.Horizontal)
+        self.sl_focus_delay.setRange(0, 5)
+        self.sl_focus_delay.setValue(self.focus_delay)
+        self.lbl_focus_delay_val = QLabel(f"{self.focus_delay}s")
+        self.lbl_focus_delay_val.setObjectName("ValueBadge")
+        self.lbl_focus_delay_val.setFixedWidth(40)
+        self.lbl_focus_delay_val.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        self.sl_focus_delay.valueChanged.connect(self._update_focus_delay)
+        delay_row.addWidget(lbl_delay)
+        delay_row.addWidget(self.sl_focus_delay)
+        delay_row.addWidget(self.lbl_focus_delay_val)
+        sec.add_layout(delay_row)
+
         # Conflict badge — visible when Gaming mode overrides Focus mode
         self._lbl_focus_conflict = QLabel("")
         self._lbl_focus_conflict.setObjectName("SyncStatus")
@@ -542,12 +569,37 @@ class MainWindow(QWidget):
         self.btn_gaming.setObjectName("GamingToggle")
         self.btn_gaming.setCheckable(True)
         self.btn_gaming.setCursor(Qt.PointingHandCursor)
-        self.btn_gaming.setToolTip(_("Priorité maximale : suspend le Mode Focus et les Profils Automatiques dès qu'un jeu passe en plein écran."))
+        self.btn_gaming.setToolTip(_(
+            "Priorité maximale : suspend le Mode Focus et les Profils Automatiques "
+            "dès qu'un jeu passe en plein écran.\n\n"
+            "Détecte le plein écran → applique le préréglage sur l'écran du jeu → "
+            "suspend le DDC-CI de cet écran pour éviter tout artefact visuel. "
+            "Les autres écrans restent librement ajustables. Tout est restauré à la sortie."
+        ))
         self.btn_gaming.toggled.connect(lambda v: self.set_gaming_mode_enabled(v, source="ui"))
         h.addWidget(lbl_help)
         h.addStretch()
         h.addWidget(self.btn_gaming)
         sec.add_layout(h)
+
+        # Exclusion list — processes that never trigger gaming mode
+        excl_row = QHBoxLayout()
+        lbl_excl = QLabel(_("Exclusions"))
+        lbl_excl.setObjectName("Subtle")
+        lbl_excl.setFixedWidth(76)
+        lbl_excl.setToolTip(_("Processus qui ne déclenchent jamais le mode jeu (ex : afterfx.exe, resolve.exe)"))
+        self._gaming_excl_edit = QLineEdit()
+        self._gaming_excl_edit.setPlaceholderText("afterfx.exe, premiere.exe …")
+        self._gaming_excl_edit.setToolTip(_("Processus qui ne déclenchent jamais le mode jeu (ex : afterfx.exe, resolve.exe)"))
+        self._gaming_excl_edit.setText(", ".join(sorted(self._gaming_exclusions)))
+        self._gaming_excl_edit.editingFinished.connect(self._on_gaming_exclusions_changed)
+        excl_row.addWidget(lbl_excl)
+        excl_row.addWidget(self._gaming_excl_edit)
+        excl_row.addSpacing(4)
+        excl_row.addWidget(self._help_btn(_(
+            "Processus qui ne déclenchent jamais le mode jeu (ex : afterfx.exe, resolve.exe)"
+        )))
+        sec.add_layout(excl_row)
 
         for attr, label, default, slot in [
             ("sl_gaming_bri", _("Lum. jeu"), self.gaming_brightness, self._on_gaming_bri_changed),
@@ -916,6 +968,18 @@ class MainWindow(QWidget):
         lbl.setObjectName("SectionTitle")
         return lbl
 
+    def _help_btn(self, tooltip: str) -> QPushButton:
+        """Small circular '?' button that shows *tooltip* on hover and on click."""
+        btn = QPushButton("?")
+        btn.setObjectName("HelpBtn")
+        btn.setFocusPolicy(Qt.NoFocus)
+        btn.setCursor(Qt.WhatsThisCursor)
+        btn.setToolTip(tooltip)
+        # Also show on click — hover alone is easy to miss
+        btn.clicked.connect(lambda _checked, b=btn, t=tooltip:
+            QToolTip.showText(b.mapToGlobal(b.rect().bottomLeft()), t, b))
+        return btn
+
     def _sep(self) -> QFrame:
         line = QFrame()
         line.setObjectName("Separator")
@@ -959,6 +1023,11 @@ class MainWindow(QWidget):
             self.btn_focus.setText(_("Activé"))
             self.btn_focus.blockSignals(False)
 
+        self.sl_focus_delay.blockSignals(True)
+        self.sl_focus_delay.setValue(self.focus_delay)
+        self.sl_focus_delay.blockSignals(False)
+        self.lbl_focus_delay_val.setText(f"{self.focus_delay}s")
+
         if self.gaming_enabled:
             self.btn_gaming.blockSignals(True)
             self.btn_gaming.setChecked(True)
@@ -987,6 +1056,8 @@ class MainWindow(QWidget):
             "gaming_enabled":        self.gaming_enabled,
             "gaming_brightness":     self.gaming_brightness,
             "gaming_contrast":       self.gaming_contrast,
+            "gaming_exclusions":     sorted(self._gaming_exclusions),
+            "focus_delay":           self.focus_delay,
         })
         self._rule_mgr.save(self._rules_engine.rules)
         log.debug("Settings saved.")
@@ -1028,7 +1099,7 @@ class MainWindow(QWidget):
         na_count = sum(1 for c in self.cards if not c.available)
         if na_count:
             self._lbl_ddc_banner.setText(
-                _("{} écran(s) sans DDC-CI — activez DDC/CI dans le menu OSD").format(na_count)
+                _("{} écran(s) sans DDC-CI — écran intégré (laptop) ou DDC/CI désactivé dans le menu OSD du moniteur.").format(na_count)
             )
             self._lbl_ddc_banner.setVisible(True)
         else:
@@ -1051,7 +1122,10 @@ class MainWindow(QWidget):
         self._apply_focus(active_idx=idx)
         if self.gaming_enabled or self._gaming_active:
             self._check_gaming_mode()
-        if not self.focus_enabled and not self._gaming_active:
+        # Suppress app rules while gaming is active OR while the 2-s exit debounce
+        # is still running — prevents brightness flickering when alt-tabbing in a game.
+        gaming_active_or_pending = self._gaming_active or self._gaming_exit_timer.isActive()
+        if not self.focus_enabled and not gaming_active_or_pending:
             self._rules_engine.poll()
 
     # ─────────────────────────────────────────────────────────────────────────
@@ -1143,6 +1217,11 @@ class MainWindow(QWidget):
     def _check_gaming_mode(self) -> None:
         fullscreen = is_fullscreen_foreground()
         if fullscreen:
+            # Skip excluded processes (e.g. After Effects full-screen renders)
+            proc = get_foreground_process()
+            if proc and proc in self._gaming_exclusions:
+                self._gaming_fs_ticks = 0
+                return
             self._gaming_exit_timer.stop()       # cancel any pending exit
             if not self._gaming_active:
                 self._gaming_fs_ticks += 1
@@ -1162,35 +1241,50 @@ class MainWindow(QWidget):
 
     def _enter_gaming_mode(self) -> None:
         self._gaming_active = True
+        # Identify the screen that contains the game — preset and DDC suspension
+        # are scoped to this screen only.  Other screens remain fully usable.
+        self._gaming_device = get_foreground_window_monitor()
         self._update_gaming_ui()
         self._update_modes_conflict_ui()
+        # Hide the panel so it doesn't appear on top of windowed-fullscreen games.
+        if self.isVisible():
+            self.hide()
         # Exit any active app rule first — restores pre-rule values so the
         # snapshot below captures the user's actual brightness, not a rule's.
         self._rules_engine.suspend()
-        # Save current slider values
-        self._pre_gaming_bri = {c.index: c.sl_bri.value() for c in self.cards if c.available}
-        self._pre_gaming_con = {c.index: c.sl_con.value() for c in self.cards if c.available}
-        # Apply gaming preset, then suspend DDC to avoid mid-game interruptions
-        for c in self.cards:
-            if c.available:
-                c.apply_rule_values(self.gaming_brightness, self.gaming_contrast)
-        QTimer.singleShot(300, self._suspend_ddc_all)
-        log.debug("Gaming mode: entered (bri=%d con=%d)", self.gaming_brightness, self.gaming_contrast)
+        # Snapshot + apply preset only on the game screen (fallback: all screens
+        # if the monitor cannot be identified — e.g. exclusive fullscreen on a
+        # single-monitor setup where GetMonitorInfoW may return None).
+        targets = [c for c in self.cards if c.available
+                   and (self._gaming_device is None
+                        or c.device_name == self._gaming_device)]
+        self._pre_gaming_bri = {c.index: c.sl_bri.value() for c in targets}
+        self._pre_gaming_con = {c.index: c.sl_con.value() for c in targets}
+        for c in targets:
+            c.apply_rule_values(self.gaming_brightness, self.gaming_contrast)
+        # Suspend DDC on the game screen only — avoids I²C bus artefacts (OSD
+        # flash, micro-flicker) on that monitor.  Other screens stay live so the
+        # user can adjust them freely during the session.
+        QTimer.singleShot(300, self._suspend_ddc_game_screen)
+        log.debug("Gaming mode: entered on %s (bri=%d con=%d)",
+                  self._gaming_device or "all", self.gaming_brightness, self.gaming_contrast)
 
-    def _suspend_ddc_all(self) -> None:
+    def _suspend_ddc_game_screen(self) -> None:
         for c in self.cards:
-            if c.available:
+            if c.available and (self._gaming_device is None
+                                or c.device_name == self._gaming_device):
                 c.set_ddc_suspended(True)
 
     def _exit_gaming_mode(self) -> None:
         self._gaming_active = False
         self._update_gaming_ui()
         self._update_modes_conflict_ui()
-        # Resume DDC first so restore writes go through
+        # Resume DDC on the game screen first so restore writes go through
         for c in self.cards:
-            if c.available:
+            if c.available and (self._gaming_device is None
+                                or c.device_name == self._gaming_device):
                 c.set_ddc_suspended(False)
-        # Restore pre-gaming values
+        # Restore pre-gaming values (only the cards that were snapshotted)
         for c in self.cards:
             if c.available:
                 bri = self._pre_gaming_bri.get(c.index)
@@ -1199,13 +1293,21 @@ class MainWindow(QWidget):
                     c.apply_rule_values(bri, con)
         self._pre_gaming_bri.clear()
         self._pre_gaming_con.clear()
-        log.debug("Gaming mode: exited, restored previous brightness/contrast")
+        self._gaming_device = None
+        log.debug("Gaming mode: exited, restored game screen brightness/contrast")
 
     def _on_gaming_bri_changed(self) -> None:
         self.gaming_brightness = self.sl_gaming_bri.value()
 
     def _on_gaming_con_changed(self) -> None:
         self.gaming_contrast = self.sl_gaming_con.value()
+
+    def _on_gaming_exclusions_changed(self) -> None:
+        """Parse the comma-separated exclusion field and update the in-memory set."""
+        raw = self._gaming_excl_edit.text()
+        self._gaming_exclusions = {
+            p.strip().lower() for p in raw.split(",") if p.strip()
+        }
 
     # ─────────────────────────────────────────────────────────────────────────
     # Global brightness
@@ -1617,6 +1719,15 @@ class MainWindow(QWidget):
         target = self.sl_glob.value()
         dim = self.sl_focus_dim.value()
         bg = max(0, target - dim)
+
+        # When the active screen changes and a delay is configured, debounce the
+        # dim: restart the timer.  force=True bypasses the delay (used on enable,
+        # refresh, or when the timer itself fires).
+        if not force and active_idx != self.last_active and self.focus_delay > 0:
+            self._focus_delay_timer.start(self.focus_delay * 1000)
+            return
+
+        self._focus_delay_timer.stop()
         if (not force and self.last_active == active_idx
                 and self._last_focus_target == target
                 and self._last_focus_dim == dim):
@@ -1636,6 +1747,10 @@ class MainWindow(QWidget):
     def _update_focus_dim_label(self, v: int) -> None:
         self.focus_dim = v
         self.lbl_focus_dim.setText(f"{v}%")
+
+    def _update_focus_delay(self, v: int) -> None:
+        self.focus_delay = v
+        self.lbl_focus_delay_val.setText(f"{v}s")
 
     # ─────────────────────────────────────────────────────────────────────────
     # Tools

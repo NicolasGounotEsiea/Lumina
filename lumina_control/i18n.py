@@ -88,10 +88,14 @@ _EN: dict[str, str] = {
     "Principal":                        "Primary",
 
     # ── monitor_card ─────────────────────────────────────────────────────────
-    "Activez « DDC/CI » dans le menu OSD (boutons physiques), puis cliquez ↻.":
-        "Enable « DDC/CI » in the OSD menu (physical buttons), then click ↻.",
-    "{} écran(s) sans DDC-CI — activez DDC/CI dans le menu OSD":
-        "{} monitor(s) without DDC-CI — enable DDC/CI in the OSD menu",
+    "Les écrans intégrés (laptop) ne supportent pas DDC-CI. "
+    "Pour un écran externe : activez « DDC/CI » dans le menu OSD (boutons physiques) puis cliquez ↻.\n"
+    "Le slider γ Gamma reste disponible sur tous les écrans.":
+        "Built-in screens (laptop) do not support DDC-CI. "
+        "For an external monitor: enable « DDC/CI » in the OSD menu (physical buttons) then click ↻.\n"
+        "The γ Gamma slider remains available on all screens.",
+    "{} écran(s) sans DDC-CI — écran intégré (laptop) ou DDC/CI désactivé dans le menu OSD du moniteur.":
+        "{} monitor(s) without DDC-CI — built-in screen (laptop) or DDC/CI disabled in the monitor OSD.",
     "Écran {}":                         "Screen {}",
     "☀  Lum.":                          "☀  Bri.",
     "◑  Con.":                          "◑  Con.",
@@ -312,6 +316,12 @@ _EN: dict[str, str] = {
         "To adjust each monitor independently, use the γ slider on its card.",
 
     # ── gaming mode ──────────────────────────────────────────────────────────
+    "Détecte le plein écran → applique le préréglage sur l'écran du jeu → "
+    "suspend le DDC-CI de cet écran pour éviter tout artefact visuel. "
+    "Les autres écrans restent librement ajustables. Tout est restauré à la sortie.":
+        "Detects fullscreen → applies preset to the game screen → "
+        "suspends DDC-CI on that screen to avoid visual artefacts. "
+        "Other screens remain freely adjustable. Everything is restored on exit.",
     "Mode Jeu":                         "Gaming mode",
     "MODE JEU":                         "GAMING MODE",
     "Préréglage auto quand un jeu est en plein écran.":
@@ -319,6 +329,14 @@ _EN: dict[str, str] = {
     "Lum. jeu":                         "Game bri.",
     "Con. jeu":                         "Game con.",
     "Désactivé pendant le mode jeu":    "Disabled during gaming mode",
+    "Exclusions":                       "Exclusions",
+    "Processus qui ne déclenchent jamais le mode jeu (ex : afterfx.exe, resolve.exe)":
+        "Processes that never trigger gaming mode (e.g. afterfx.exe, resolve.exe)",
+
+    # ── focus mode — delay ────────────────────────────────────────────────────
+    "Délai Focus":                      "Focus delay",
+    "Délai avant d'atténuer les écrans inactifs — évite le flickering lors d'un Alt+Tab rapide.":
+        "Delay before dimming inactive screens — avoids flickering on rapid Alt+Tab.",
 
     # ── night mode ───────────────────────────────────────────────────────────
     "MODE NUIT":                        "NIGHT MODE",

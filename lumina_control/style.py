@@ -564,6 +564,26 @@ QPushButton[class="icon-btn"][danger="true"]:hover {{
 QPushButton#PowerBtn[active="false"]         {{ color: {dang}; }}
 QPushButton#PowerBtn[active="true"]:hover    {{ color: {succ}; }}
 
+/* ─── Help button (?) ─────────────────────────────────────────────────── */
+QPushButton#HelpBtn {{
+    background: transparent;
+    border: 1px solid {bacc};
+    border-radius: 9px;
+    color: {mute};
+    font-size: 10px;
+    font-weight: 600;
+    min-width: 18px;
+    max-width: 18px;
+    min-height: 18px;
+    max-height: 18px;
+    padding: 0px;
+}}
+QPushButton#HelpBtn:hover {{
+    color: {ac};
+    border-color: {ac};
+    background: {asu};
+}}
+
 /* ─── Window chrome buttons ───────────────────────────────────────────── */
 QPushButton#CloseWinBtn {{
     background: transparent;

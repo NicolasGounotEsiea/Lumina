@@ -38,6 +38,7 @@ DEFAULT_RULES: list[AppRule] = [
     # Creative apps — accurate gamma is critical
     AppRule("photoshop.exe",   "Photoshop",         75,   55,   1.0),
     AppRule("lightroom.exe",   "Lightroom",         70,   55,   1.0),
+    AppRule("afterfx.exe",     "After Effects",     80,   55,   1.0),
     AppRule("blender.exe",     "Blender",           80,   55,  None),
     # Gaming — higher brightness + slight contrast boost
     AppRule("steam.exe",       "Steam",             80,   65,  None),
