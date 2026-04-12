@@ -346,6 +346,55 @@ _EN: dict[str, str] = {
     "Délai avant d'atténuer les écrans inactifs — évite le flickering lors d'un Alt+Tab rapide.":
         "Delay before dimming inactive screens — avoids flickering on rapid Alt+Tab.",
 
+    # ── group separators ─────────────────────────────────────────────────────
+    "RÉGLAGES":                         "SETTINGS",
+    "AUTOMATISATION":                   "AUTOMATION",
+    "APPLICATION":                      "APPLICATION",
+
+    # ── circadian brightness ─────────────────────────────────────────────────
+    "LUMINOSITÉ CIRCADIENNE":           "CIRCADIAN BRIGHTNESS",
+    "Suit le soleil — luminosité automatique lever/coucher.":
+        "Follows the sun — automatic sunrise/sunset brightness.",
+    "La luminosité suit une courbe cosinus entre le lever et le coucher du soleil, "
+    "avec un pic au zénith.\n\n"
+    "Avant le lever et après le coucher : luminosité minimale.\n"
+    "Compatible avec le Mode Focus (atténue les écrans inactifs par rapport à la cible).\n"
+    "Suspendu automatiquement en Mode Jeu.":
+        "Brightness follows a cosine curve between sunrise and sunset, "
+        "peaking at solar noon.\n\n"
+        "Before sunrise and after sunset: minimum brightness.\n"
+        "Compatible with Focus mode (dims inactive screens relative to the target).\n"
+        "Automatically suspended in Gaming mode.",
+    "Ville":                            "City",
+    "Latitude":                         "Latitude",
+    "Longitude":                        "Longitude",
+    "Lum. min":                         "Bri. min",
+    "Lum. max":                         "Bri. max",
+    "Cible actuelle : {}%":             "Current target: {}%",
+    "Cible : {}%  ·  chaleur {}%":      "Target: {}%  ·  warmth {}%",
+    "Paris":                            "Paris",
+    "Londres":                          "London",
+    "Berlin":                           "Berlin",
+    "Madrid":                           "Madrid",
+    "Rome":                             "Rome",
+    "Amsterdam":                        "Amsterdam",
+    "Bruxelles":                        "Brussels",
+    "Zurich":                           "Zurich",
+    "New York":                         "New York",
+    "Los Angeles":                      "Los Angeles",
+    "Chicago":                          "Chicago",
+    "Toronto":                          "Toronto",
+    "Montréal":                         "Montreal",
+    "Tokyo":                            "Tokyo",
+    "Seoul":                            "Seoul",
+    "Sydney":                           "Sydney",
+    "Dubaï":                            "Dubai",
+    "Singapore":                        "Singapore",
+    "São Paulo":                        "São Paulo",
+    "Personnalisé":                     "Custom",
+    "Chaleur circadienne":              "Circadian warmth",
+    "Chaleur max":                      "Max warmth",
+
     # ── night mode ───────────────────────────────────────────────────────────
     "MODE NUIT":                        "NIGHT MODE",
     "Activer le mode nuit":             "Enable night mode",

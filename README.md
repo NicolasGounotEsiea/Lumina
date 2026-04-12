@@ -1,6 +1,6 @@
 # Lumina Control
 
-> Contrôle multi-écrans DDC-CI depuis la barre des tâches Windows — luminosité, contraste, calibrage RGB, correction gamma et mode jeu automatique, le tout sans driver tiers.
+> Contrôle multi-écrans DDC-CI depuis la barre des tâches Windows — luminosité, contraste, calibrage RGB, correction gamma, mode jeu automatique et luminosité circadienne, le tout sans driver tiers.
 
 ---
 
@@ -8,21 +8,22 @@
 
 | Catégorie | Détails |
 |---|---|
-| **DDC-CI** | Luminosité & contraste via VCP `0x10` / `0x12`; gains RGB `0x16/0x18/0x1A`; toutes les opérations DDC-CI (y compris lecture RGB) déléguées à un `QThread` dédié par écran |
-| **Gamma** | Correction GPU par écran via `SetDeviceGammaRamp` (gdi32) — indépendant du DDC-CI. Slider par card + slider global "appliquer à tous". Tooltip explicatif sur chaque slider. |
+| **DDC-CI** | Luminosité & contraste via VCP `0x10` / `0x12` ; gains RGB `0x16/0x18/0x1A` ; toutes les opérations déléguées à un `QThread` dédié par écran |
+| **Gamma** | Correction GPU par écran via `SetDeviceGammaRamp` (gdi32) — indépendant du DDC-CI. Slider par carte + slider global. |
 | **Sync** | Mode maître/esclave absolu ou avec décalage relatif par écran |
-| **Focus** | Détection de la fenêtre active (win32api) ; assombrit les écrans inactifs. Badge de conflit visible si le Mode Jeu suspend le Mode Focus. |
-| **Mode Jeu** | Détection plein écran automatique (`GetMonitorInfoW`) ; applique un préréglage bri/con, suspend les écritures DDC-CI pendant la session, thème rouge dans l'UI. Priorité maximale sur Focus et Profils Auto. |
-| **Profils par app** | Règles automatiques déclenchées par l'application en focus (500 ms) — luminosité, contraste, gamma, gains RVB ; s'applique uniquement sur l'écran contenant la fenêtre |
+| **Focus** | Détection fenêtre active (win32api) ; assombrit les écrans inactifs. Délai configurable (0–5 s) pour éviter le flickering à l'Alt+Tab. |
+| **Mode Jeu** | Détection plein écran automatique ; applique un préréglage bri/con sur l'écran du jeu uniquement, suspend le DDC-CI de cet écran, thème rouge dans l'UI. Priorité maximale sur Focus et Profils Auto. |
+| **Luminosité circadienne** | Courbe cosinus ancrée au lever/coucher réel du soleil (algorithme NOAA). Luminosité et chaleur d'écran varient automatiquement sur 24 h. Visualisation en temps réel dans le panneau. |
+| **Chaleur circadienne** | Tint chaud inversement proportionnel à la courbe de luminosité — maximum la nuit, neutre à midi solaire. Indépendant du Mode Nuit. |
+| **Profils par app** | Règles automatiques déclenchées par l'application en focus (500 ms) — luminosité, contraste, gamma, gains RVB ; ciblage par écran via `MonitorFromWindow`. |
 | **Colorimétrie** | Gains R/V/B DDC-CI par règle d'application, avec aperçu swatch en direct |
 | **Calibrage** | Dialog RGB par écran + assistant guidé en 6 étapes avec patterns plein écran |
-| **Position des écrans** | `enumerate_monitors()` calcule automatiquement Gauche / Droite / Centre / Haut / Bas / Principal selon la disposition physique. Labels visibles dans le panneau, le dropdown de sync et le wizard. |
-| **Fenêtre déplaçable** | Glisser depuis la barre de titre repositionne le panneau flottant. Drag limité à la zone titre pour ne pas interférer avec les sliders. |
-| **Priorité des modes** | Hiérarchie Gaming > Focus > Profils Auto documentée dans l'UI : badges "⚠ Suspendu" dans chaque section concernée + tooltips sur les boutons de bascule. |
+| **Position des écrans** | `enumerate_monitors()` calcule automatiquement Gauche / Droite / Centre / Haut / Bas / Principal selon la disposition physique. |
+| **Hiérarchie visuelle** | Séparateurs de groupes étiquetés (RÉGLAGES / AUTOMATISATION / APPLICATION) dans le panneau principal. |
 | **i18n** | Détection automatique FR/EN depuis la locale système (`lumina_control/i18n.py`) |
 | **Snapshots** | Sauvegarde / restauration de profils dans `%APPDATA%\LuminaControl` |
 | **Instance unique** | Guard via `QLocalServer` — relance = réafficher la fenêtre |
-| **Assistant de démarrage** | Wizard 5 étapes : bienvenue, scan DDC-CI, contrôle des écrans, fonctions avancées, récapitulatif. Couvre toutes les fonctionnalités avec un tableau de référence rapide. |
+| **Assistant de démarrage** | Wizard 5 étapes avec tableau de référence rapide |
 | **Build** | PyInstaller + Inno Setup → installeur Windows autonome |
 
 ---
@@ -59,25 +60,29 @@ Requiert : [ImageMagick](https://imagemagick.org/), [PyInstaller](https://pyinst
 
 ```
 Lumina/
-├── multiscreen_tray.py          # Point d'entrée legacy (shim)
+├── multiscreen_tray.py          # Point d'entrée legacy (shim 7 lignes)
 ├── lumina_control/
 │   ├── __main__.py              # Entrée principale, guard single-instance
-│   ├── config.py                # Constantes couleur, chemins AppData
+│   ├── config.py                # Constantes, palette couleur, chemins AppData
 │   ├── style.py                 # Stylesheet Qt dark/light + variante gaming (rouge)
-│   ├── i18n.py                  # Internationalisation — fonction _(), FR/EN
-│   ├── startup.py               # Démarrage Windows — registre HKCU Run (F6)
-│   ├── updater.py               # Vérif. GitHub Releases en arrière-plan (B10)
+│   ├── i18n.py                  # Internationalisation — _(), FR/EN
+│   ├── startup.py               # Démarrage Windows — registre HKCU Run
+│   ├── updater.py               # Vérif. GitHub Releases en arrière-plan
 │   ├── profiles.py              # ProfileManager — snapshots & settings JSON
-│   ├── utils.py                 # Gamma (gdi32), wake monitors, active/foreground screen, fullscreen detection
+│   ├── sun.py                   # Algorithme NOAA sunrise/sunset (pur Python)
+│   ├── circadian.py             # CircadianEngine — courbe bri + chaleur 24 h
+│   ├── utils.py                 # Gamma (gdi32), wake monitors, fullscreen, foreground
 │   ├── monitor_enumerate.py     # Énumération stable via EnumDisplayMonitors
-│   ├── app_rules.py             # AppRule dataclass + AppRuleManager (persistance JSON)
+│   ├── app_rules.py             # AppRule dataclass + AppRuleManager
+│   ├── rules_engine.py          # RulesEngine — détection foreground, apply/restore
 │   └── ui/
 │       ├── tray.py              # QSystemTrayIcon + menu contextuel
-│       ├── main_window.py       # Panneau flottant principal + moteur de règles
+│       ├── main_window.py       # Panneau flottant principal
 │       ├── monitor_card.py      # Widget par écran (bri/con/power/calibrage/RGB)
 │       ├── app_rules_dialog.py  # Dialog CRUD des profils par application
 │       ├── calibration.py       # CalibrationDialog + CalibrationWizard
-│       └── patterns.py          # PatternWindow — patterns plein écran
+│       ├── patterns.py          # PatternWindow — 10 patterns plein écran
+│       └── onboarding.py        # OnboardingDialog — wizard premier lancement
 ├── build.ps1
 ├── LuminaControl.spec
 └── installer.iss
@@ -87,38 +92,40 @@ Lumina/
 
 | Classe | Rôle |
 |---|---|
-| `MainWindow` | Panneau flottant. Gère les cards, sync, gamma, focus, mode jeu, paramètres. |
-| `MonitorCard` | Card par écran. Sliders bri/con, bouton power, ouverture calibrage. |
+| `MainWindow` | Panneau flottant. Gère les cards, sync, gamma, focus, mode jeu, circadien, paramètres. |
+| `MonitorCard` | Card par écran. Sliders bri/con/gamma, bouton power, calibrage. |
+| `CircadianEngine` | Calcule la cible de luminosité et de chaleur selon la courbe sin 24 h. |
+| `_CircadianCurveWidget` | Widget custom `QPainter` — courbe 24 h avec soleil/lune géométriques. |
 | `CalibrationDialog` | Ajustement fin des gains RGB via DDC-CI. |
 | `CalibrationWizard` | Assistant 6 étapes intégrant `PatternWindow`. |
-| `PatternWindow` | 10 patterns plein écran pour calibrage visuel. |
 | `Tray` | Wraps `QSystemTrayIcon`, possède `MainWindow`. |
-| `ProfileManager` | Lecture/écriture JSON — snapshots et paramètres persistants. |
-| `MonitorDescriptor` | Dataclass stable : `device_name`, géométrie, handle DDC-CI, `position_hint` (Gauche/Droite/Principal…). |
+| `ProfileManager` | Lecture/écriture JSON — snapshots, settings, profils nommés. |
+| `MonitorDescriptor` | Dataclass stable : `device_name`, géométrie, handle DDC-CI, `position_hint`. |
 | `AppRule` | Règle par application : process, bri, con, gamma, R, G, B, enabled. |
-| `AppRuleManager` | Chargement/sauvegarde des règles dans `app_rules.json`. |
+| `RulesEngine` | Détection foreground + apply/restore avec garde de stabilité (2 ticks). |
 
-### Correspondance DDC-CI ↔ écrans (B1)
+### Luminosité circadienne
 
-Au lieu du fragile `zip(get_monitors(), si_monitors())`, `enumerate_monitors()` :
+`sun.py` implémente l'algorithme NOAA (Spencer 1971) en Python pur — zéro dépendance externe :
+- Équation du temps + déclinaison solaire → angle horaire → lever/coucher en UTC
+- Conversion vers l'heure civile locale via `datetime.now().astimezone().utcoffset()`
+- Fallback (6 h / 20 h) en cas de nuit polaire ou soleil de minuit
 
-1. Appelle `EnumDisplayMonitors` → liste d'HMONITORs dans l'ordre Windows
-2. Pour chaque HMONITOR, `GetNumberOfPhysicalMonitorsFromHMONITOR` détecte la présence DDC-CI
-3. Assigne les handles `monitorcontrol` uniquement aux HMONITORs DDC-capables (ordre conservé)
-4. La géométrie vient de `screeninfo`, matchée par `device_name` (`\\.\DISPLAY1`, etc.)
-5. `_attach_position_hints()` calcule Gauche/Droite/Centre (ou Haut/Bas pour setups empilés) et marque le principal
+`CircadianEngine` consomme ces horaires :
+- `_day_factor(hour) = sin(π·t)` où `t ∈ [0,1]` entre lever et coucher → pic exact à midi solaire
+- `target_brightness()` interpole entre `bri_min` et `bri_max`
+- `target_warmth()` est l'inverse : maximum la nuit (`warmth_max/100`), zéro à midi
+- `step()` limite le changement à `step_pct` par appel (500 ms) — transitions invisibles
 
-Résultat : un écran sans DDC-CI ne décale plus les handles des autres ; chaque écran est identifiable par sa position physique.
+### Threading DDC-CI
 
-### Threading DDC-CI (`_DDCWorker`)
+Chaque `MonitorCard` possède un `QThread` dédié hébergeant un `_DDCWorker`. Tous les accès DDC-CI passent par des signaux cross-thread — jamais depuis le thread principal.
 
-Chaque `MonitorCard` possède un `QThread` dédié hébergeant un `_DDCWorker`. Tous les accès DDC-CI (bri/con, RGB, power, **lecture RGB**) passent par des signaux cross-thread et s'exécutent sur le worker sans bloquer l'UI.
+- Debounce 150 ms sur les sliders bri/con
+- `read_rgb()` : `QEventLoop` local + timeout 500 ms, garde `_rgb_reading` anti-réentrance
+- `write_failed` signal : surface l'erreur si le moniteur est en preset OSD (Game/FPS mode bloque les écritures DDC-CI)
 
-- `read_rgb()` utilise un `QEventLoop` local + timeout 500 ms — le thread principal reste réactif pendant la lecture.
-- Un garde `_rgb_reading` empêche la ré-entrance si le poll timer se déclenche pendant l'attente.
-- Les sliders bri/con ont un debounce de 150 ms ; le slider global `Luminosité globale` applique en temps réel sur `valueChanged`, les cards absorbent le flood via leur propre debounce.
-
-### Codes VCP utilisés
+### Codes VCP
 
 | Code | Fonction |
 |---|---|
@@ -130,91 +137,63 @@ Chaque `MonitorCard` possède un `QThread` dédié hébergeant un `_DDCWorker`. 
 | `0x1A` | Gain Bleu |
 | `0xD6` | Power (`1`=on, `5`=standby) |
 
+### Priorité des modes (runtime)
+
+```
+Gaming  >  Focus  >  App Rules
+```
+
+- **Gaming** : entré après 2 ticks plein écran consécutifs (~1 s), sorti après 2 s. Applique le préréglage sur l'écran du jeu uniquement. Suspend DDC-CI de cet écran et le `RulesEngine`. Masque le panneau flottant.
+- **Focus** : assombrit les écrans inactifs. Délai configurable avant application. Suspendu pendant le gaming.
+- **App Rules** : polled uniquement si `not focus_enabled and not gaming_active_or_pending`. `gaming_active_or_pending` couvre aussi le timer de sortie (2 s) pour éviter le flickering à l'alt-tab.
+- **Circadien** : suspendu pendant le gaming. La chaleur circadienne cède la main au Mode Nuit si les deux sont actifs.
+
+### Persistance (`%APPDATA%\LuminaControl\`)
+
+| Fichier | Contenu |
+|---|---|
+| `settings.json` | Tous les réglages UI (sync, gamma, focus, gaming, nuit, circadien…) |
+| `profiles.json` | Snapshot rapide : `{saved_at, monitors: […]}` |
+| `named_profiles.json` | Profils nommés : `{name: {monitors, gamma_values}}` |
+| `app_rules.json` | Liste des `AppRule`. Défauts depuis `DEFAULT_RULES` si absent. |
+
 ---
 
 ## Roadmap
 
 Voir les [issues ouvertes](https://github.com/NicolasGounotEsiea/Lumina/issues) pour le détail complet.
 
-**Backend (robustesse & nouvelles capacités)**
+**Backend**
 
 - [x] B1 — Correspondance stable des moniteurs via `EnumDisplayMonitors`
-- [x] B2 — Écritures DDC-CI non-bloquantes (worker QThread)
-  - [x] `_DDCWorker` sur `QThread` dédié par écran — bri/con/RGB/power asynchrones
-  - [x] Debounce 150 ms sur les sliders pour éviter le flood DDC-CI
+- [x] B2 — Écritures DDC-CI non-bloquantes (`_DDCWorker` sur `QThread`)
 - [ ] B3 — Retry DDC-CI avec backoff exponentiel
 - [x] B4 — Profils nommés multiples (save/load/delete)
-  - [x] Sauvegarde/restauration/suppression depuis le panneau principal
-  - [x] Persistance luminosité, contraste et gamma par écran dans `named_profiles.json`
-- [ ] B5 — Luminosité planifiée (règles horaires, lever/coucher)
+- [x] B5 — Luminosité circadienne (courbe NOAA, chaleur inversée)
 - [x] B6 — Mode nuit / température de couleur (gamma warm tint)
-  - [x] Slider de chaleur (0–100) combiné à la correction gamma via `SetDeviceGammaRamp`
-  - [x] Persistance dans `settings.json`
-- [x] B11 — Mode Jeu
-  - [x] Détection plein écran via comparaison rect fenêtre ↔ rect moniteur (`GetMonitorInfoW`)
-  - [x] Préréglage bri/con configurable appliqué à l'entrée en plein écran
-  - [x] Suspension des écritures DDC-CI pendant la session (pas d'interruption bus I²C)
-  - [x] Thème rouge complet dans l'UI dès l'activation du mode
-  - [x] Grise automatiquement les profils par application (conflit évité)
-  - [x] Entrée dans le menu tray synchronisée avec le panneau principal
-- [x] B7 — Règles par application (auto-dim/calibrage pour certains process)
-  - [x] Détection foreground process 500 ms + garde de stabilité
-  - [x] Luminosité, contraste, gamma, gains RVB DDC-CI par règle
-  - [x] Ciblage par écran (`MonitorFromWindow`) — seul l'écran actif est affecté
-  - [x] Colorimétrie R/V/B avec aperçu swatch en direct
-  - [x] CRUD complet + picker d'apps en cours
+- [x] B7 — Règles par application
 - [ ] B8 — Planification power (standby auto après idle)
 - [ ] B9 — Raccourcis globaux (hotkeys système)
 - [x] B10 — Vérification de mise à jour (GitHub Releases API)
-  - [x] Check non-bloquant au démarrage (QThread, délai 3 s)
-  - [x] Bannière discrète avec bouton "Télécharger" si nouvelle version détectée
+- [x] B11 — Mode Jeu ciblé par écran
 
-**Frontend (UX & confort)**
+**Frontend**
 
-- [~] F1 — Noms d'écrans personnalisables
-  - [x] Labels automatiques Gauche / Droite / Centre / Haut / Bas / Principal calculés depuis la géométrie Windows
-  - [ ] Noms entièrement personnalisables par l'utilisateur (non implémenté)
-- [x] F2 — UI de gestion des profils (liste, renommer, supprimer)
-  - [x] Inclus dans B4 — liste avec chargement et suppression dans le panneau principal
+- [~] F1 — Noms d'écrans (labels automatiques OK, personnalisation manuelle non implémentée)
+- [x] F2 — Gestion des profils nommés (liste, charger, supprimer)
 - [ ] F3 — Raccourcis clavier in-app
 - [x] F4 — Infobulle tray avec luminosité courante
-  - [x] `tray.setToolTip(f"Lumina Control — {brightness}%")` mis à jour à chaque changement
-- [ ] F5 — Notifications toast (save/restore confirmé)
+- [ ] F5 — Notifications toast
 - [x] F6 — Lancement au démarrage Windows (registre)
-  - [x] `lumina_control/startup.py` — lecture/écriture `HKCU\...\Run`
-  - [x] Checkbox dans la section PARAMÈTRES (pas d'admin requis)
-- [x] F7 — Internationalisation (i18n)
-  - [x] Module `lumina_control/i18n.py` — fonction `_()`, détection de locale, FR/EN
-  - [x] Toutes les chaînes UI traduites (tray, main_window, monitor_card, app_rules_dialog, calibration, onboarding)
+- [x] F7 — Internationalisation FR/EN
 - [x] F8 — Courbes gamma par écran indépendantes
-  - [x] Slider gamma dans chaque `MonitorCard` (GPU, indépendant DDC-CI)
-  - [x] Persistance par écran dans `settings.json` (`gamma_values`)
-  - [x] Slider global GAMMA GPU = raccourci « appliquer à tous »
-  - [x] Tooltip explicatif sur chaque slider (diff per-card vs global, valeurs de référence)
-  - [x] Description contextuelle dans la section GAMMA GPU
-- [x] F9 — Refonte visuelle complète (v1.2.0)
-  - [x] Stylesheet thématisée dark/light avec variables CSS-like (`style.py`)
-  - [x] Sections collapsibles dans le panneau principal
-  - [x] Cartes avec dégradé de fond subtil
-  - [x] Sliders redessinés — rainure 4 px, poignée 14 px, remplissage couleur d'accentuation
-  - [x] Scrollbar transparente par défaut, visible au survol
-  - [x] `QToolTip` stylisé
-  - [x] Animation de fondu à l'ouverture de la fenêtre
-- [x] F10 — Fenêtre déplaçable (drag-to-move)
-  - [x] `mousePressEvent` / `mouseMoveEvent` / `mouseReleaseEvent` sur `MainWindow`
-  - [x] Drag actif uniquement dans la zone titre (`_title_bar`) — ne perturbe pas les sliders
-- [x] F11 — Lisibilité de la priorité des modes dans l'UI
-  - [x] Badge "⚠ Suspendu — Mode Jeu actif" dans les sections Focus, Sync et Profils Auto
-  - [x] Tooltip sur btn_focus : explique que le Mode Jeu le suspend automatiquement
-  - [x] Tooltip sur btn_gaming : explique la priorité maximale sur Focus et Profils Auto
-- [x] F12 — Assistant de démarrage enrichi
-  - [x] 5 étapes au lieu de 4 : bienvenue, DDC-CI, contrôle des écrans, fonctions avancées, récapitulatif
-  - [x] Tableau de référence rapide ("où trouver chaque fonction") sur la page finale
-  - [x] Tip DDC-CI : indique que le scan est relançable via ↻
-  - [x] Cleanup du thread de scan (`deleteLater` sur le `QThread`)
+- [x] F9 — Refonte visuelle dark/light (v1.2.0)
+- [x] F10 — Fenêtre déplaçable
+- [x] F11 — Hiérarchie des modes dans l'UI (badges + tooltips)
+- [x] F12 — Assistant de démarrage enrichi (5 étapes)
 - [x] F13 — Slider luminosité globale en temps réel
-  - [x] Connecté sur `valueChanged` (au lieu de `sliderReleased`) — les cards suivent le curseur en live
-  - [x] Les debounce 150 ms des cards absorbent le flood et protègent le bus DDC-CI
+- [x] F14 — Visualisation circadienne (courbe 24 h avec soleil/lune géométriques)
+- [x] F15 — Hiérarchie visuelle des sections (séparateurs de groupes étiquetés)
 
 ---
 

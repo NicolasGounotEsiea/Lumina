@@ -220,6 +220,14 @@ QLabel#SectionTitle {{
     padding: 4px 0 2px 0;
 }}
 
+QLabel#GroupTitle {{
+    font-weight: 700;
+    font-size: 10px;
+    color: {ac};
+    letter-spacing: 1.8px;
+    padding: 10px 0 2px 2px;
+}}
+
 QLabel#Title {{
     font-weight: 600;
     font-size: 13px;
