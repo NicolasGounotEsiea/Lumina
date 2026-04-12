@@ -1,15 +1,19 @@
 """Main floating control panel."""
 import logging
+import math
 from functools import partial
 
-from PySide6.QtCore import Qt, QEasingCurve, QPropertyAnimation, QTimer, Signal
-from PySide6.QtGui import QColor
+from PySide6.QtCore import Qt, QEasingCurve, QPointF, QPropertyAnimation, QRectF, QTimer, Signal
+from PySide6.QtGui import (
+    QColor, QFont, QLinearGradient, QPainter, QPainterPath, QPen,
+)
 from PySide6.QtWidgets import (
-    QApplication, QCheckBox, QComboBox, QFileDialog,
+    QApplication, QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog,
     QFrame, QGraphicsDropShadowEffect, QHBoxLayout, QLabel,
     QLineEdit, QPushButton, QScrollArea, QSlider, QToolTip, QVBoxLayout, QWidget,
 )
 
+from lumina_control.circadian import CircadianEngine, PRESET_CITIES
 from lumina_control.config import (
     ACCENT_COLOR, APP_NAME, APP_WIDTH, WARM_COLOR,
     get_named_profiles_path, get_profile_path, get_rules_path, get_settings_path,
@@ -30,6 +34,217 @@ from lumina_control.ui.patterns import PatternWindow
 from lumina_control.ui.calibration import CalibrationWizard
 
 log = logging.getLogger(__name__)
+
+
+class _CircadianCurveWidget(QWidget):
+    """24-h circadian curve — cohesive with the app card style.
+
+    Draws on the app's dark palette:
+    - Card-style background (#2B2B2B) with rounded corners + border
+    - Subtle warm day-zone band, darker night zones
+    - Filled sin-curve in warm amber
+    - Dashed sunrise / sunset markers with HH:MM
+    - Hour grid: 00 / 06 / 12 / 18
+    - Accent (#60CDFF) vertical line + dot for the current time
+    - Geometric sun (circle + rays) or crescent moon above the cursor
+    """
+
+    _H = 108
+
+    def __init__(self, engine: "CircadianEngine", parent=None) -> None:
+        super().__init__(parent)
+        self._engine = engine
+        self.setFixedHeight(self._H)
+
+    def refresh(self) -> None:
+        self.update()
+
+    # ── helpers ──────────────────────────────────────────────────────────────
+
+    @staticmethod
+    def _draw_sun(p: QPainter, cx: float, cy: float, r: float) -> None:
+        """Geometric sun: filled circle + 8 short rays."""
+        p.save()
+        p.setBrush(QColor(255, 200, 50))
+        p.setPen(Qt.NoPen)
+        p.drawEllipse(QPointF(cx, cy), r, r)
+        ray_pen = QPen(QColor(255, 200, 50, 180), 1.2, Qt.SolidLine, Qt.RoundCap)
+        p.setPen(ray_pen)
+        p.setBrush(Qt.NoBrush)
+        for i in range(8):
+            angle = math.radians(i * 45)
+            x1 = cx + math.cos(angle) * (r + 2.5)
+            y1 = cy + math.sin(angle) * (r + 2.5)
+            x2 = cx + math.cos(angle) * (r + 5.5)
+            y2 = cy + math.sin(angle) * (r + 5.5)
+            p.drawLine(QPointF(x1, y1), QPointF(x2, y2))
+        p.restore()
+
+    @staticmethod
+    def _draw_moon(p: QPainter, cx: float, cy: float, r: float) -> None:
+        """Geometric crescent moon using path clipping."""
+        p.save()
+        p.setBrush(QColor(180, 200, 230))
+        p.setPen(Qt.NoPen)
+        path = QPainterPath()
+        path.addEllipse(QPointF(cx, cy), r, r)
+        clip = QPainterPath()
+        clip.addEllipse(QPointF(cx + r * 0.55, cy - r * 0.1), r * 0.82, r * 0.82)
+        crescent = path.subtracted(clip)
+        p.drawPath(crescent)
+        p.restore()
+
+    # ── paint ─────────────────────────────────────────────────────────────────
+
+    def paintEvent(self, _event) -> None:  # noqa: N802
+        eng = self._engine
+        eng._refresh_sun_cache()
+
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing)
+
+        W, H = float(self.width()), float(self.height())
+        radius   = 10.0
+        pad_l    = 2.0
+        pad_r    = 2.0
+        pad_top  = 18.0   # icon zone
+        pad_bot  = 16.0   # label zone
+        curve_h  = H - pad_top - pad_bot
+
+        rise = eng._sunrise
+        sett = eng._sunset
+
+        def _x(hour: float) -> float:
+            return pad_l + (hour / 24.0) * (W - pad_l - pad_r)
+
+        def _y(bri: int) -> float:
+            t = (bri - eng.bri_min) / max(1, eng.bri_max - eng.bri_min)
+            return pad_top + curve_h * (1.0 - t)
+
+        # ── Card background ───────────────────────────────────────────────────
+        card_path = QPainterPath()
+        card_path.addRoundedRect(QRectF(0, 0, W, H), radius, radius)
+        p.fillPath(card_path, QColor("#2B2B2B"))
+
+        # ── Night overlay (before sunrise + after sunset) ─────────────────────
+        night_color = QColor(0, 0, 0, 55)
+        sx, ex = _x(rise), _x(sett)
+
+        left_night = QPainterPath()
+        left_night.addRoundedRect(QRectF(0, 0, sx, H), radius, radius)
+        left_night = left_night.intersected(card_path)
+        p.fillPath(left_night, night_color)
+
+        right_night = QPainterPath()
+        right_night.addRoundedRect(QRectF(ex, 0, W - ex, H), radius, radius)
+        right_night = right_night.intersected(card_path)
+        p.fillPath(right_night, night_color)
+
+        # Soft warm day-zone horizontal gradient
+        if ex > sx:
+            day_grad = QLinearGradient(QPointF(sx, 0), QPointF(ex, 0))
+            day_grad.setColorAt(0.0,  QColor(255, 160, 30,  0))
+            day_grad.setColorAt(0.25, QColor(255, 160, 30, 18))
+            day_grad.setColorAt(0.75, QColor(255, 160, 30, 18))
+            day_grad.setColorAt(1.0,  QColor(255, 160, 30,  0))
+            day_path = QPainterPath()
+            day_path.addRect(QRectF(sx, 0, ex - sx, H))
+            day_path = day_path.intersected(card_path)
+            p.fillPath(day_path, day_grad)
+
+        # ── Hour grid (00 / 06 / 12 / 18) ────────────────────────────────────
+        grid_font = QFont("Segoe UI Variable", 7)
+        p.setFont(grid_font)
+        fm = p.fontMetrics()
+        for hour, label in ((0, "00"), (6, "06"), (12, "12"), (18, "18")):
+            gx = _x(float(hour))
+            p.setPen(QPen(QColor(255, 255, 255, 18), 1))
+            p.drawLine(QPointF(gx, pad_top), QPointF(gx, H - pad_bot))
+            tw = fm.horizontalAdvance(label)
+            lx = max(2.0, min(gx - tw / 2, W - tw - 2))
+            p.setPen(QColor(255, 255, 255, 35))
+            p.drawText(QPointF(lx, H - 3), label)
+
+        # ── Curve fill + line ─────────────────────────────────────────────────
+        N = max(int(W), 200)
+        fill = QPainterPath()
+        line = QPainterPath()
+        fill.moveTo(_x(0), H - pad_bot)
+        for i in range(N + 1):
+            hour = (i / N) * 24.0
+            bri  = eng._bri_curve(hour)
+            px, py = _x(hour), _y(bri)
+            fill.lineTo(px, py)
+            if i == 0:
+                line.moveTo(px, py)
+            else:
+                line.lineTo(px, py)
+        fill.lineTo(_x(24), H - pad_bot)
+        fill.closeSubpath()
+
+        fill_clip = fill.intersected(card_path)
+        fill_grad = QLinearGradient(QPointF(0, pad_top), QPointF(0, H - pad_bot))
+        fill_grad.setColorAt(0.0, QColor(255, 170, 30, 90))
+        fill_grad.setColorAt(1.0, QColor(255, 110, 0,   8))
+        p.fillPath(fill_clip, fill_grad)
+
+        pen_curve = QPen(QColor(255, 185, 45, 200), 1.6, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin)
+        p.setPen(pen_curve)
+        p.drawPath(line)
+
+        # ── Sunrise / sunset dashed markers + labels ──────────────────────────
+        pen_dash = QPen(QColor(255, 255, 255, 38), 1, Qt.DashLine)
+        pen_dash.setDashPattern([3, 4])
+        p.setPen(pen_dash)
+        for x in (sx, ex):
+            p.drawLine(QPointF(x, pad_top), QPointF(x, H - pad_bot))
+
+        lbl_font = QFont("Segoe UI Variable", 8)
+        lbl_font.setWeight(QFont.Medium)
+        p.setFont(lbl_font)
+        fm2 = p.fontMetrics()
+        p.setPen(QColor(255, 255, 255, 100))
+
+        rise_txt = eng._fmt(rise)
+        sett_txt = eng._fmt(sett)
+        rtw = fm2.horizontalAdvance(rise_txt)
+        stw = fm2.horizontalAdvance(sett_txt)
+        lbl_y = H - 3
+        p.drawText(QPointF(max(pad_l, min(sx + 3, W - rtw - 4)), lbl_y), rise_txt)
+        p.drawText(QPointF(max(pad_l, min(ex - stw - 3, W - stw - 4)), lbl_y), sett_txt)
+
+        # ── Current-time accent line + dot ────────────────────────────────────
+        now_h   = eng._current_hour()
+        nx      = _x(now_h)
+        is_day  = rise < now_h < sett
+        bri_now = eng._bri_curve(now_h)
+        ny      = _y(bri_now)
+
+        accent = QColor("#60CDFF")
+        p.setPen(QPen(QColor(96, 205, 255, 70), 1))
+        p.drawLine(QPointF(nx, pad_top), QPointF(nx, H - pad_bot))
+
+        p.setBrush(accent)
+        p.setPen(QPen(QColor("#2B2B2B"), 1.5))
+        p.drawEllipse(QPointF(nx, ny), 4.0, 4.0)
+
+        # ── Sun or moon icon above / below cursor ─────────────────────────────
+        icon_r  = 5.5
+        icon_cx = max(icon_r + 8, min(nx, W - icon_r - 8))
+        if is_day:
+            icon_cy = max(icon_r + 6, ny - 13)
+            self._draw_sun(p, icon_cx, icon_cy, icon_r)
+        else:
+            icon_cy = min(H - pad_bot - icon_r - 2, ny + 13)
+            icon_cy = max(icon_r + 4, icon_cy)
+            self._draw_moon(p, icon_cx, icon_cy, icon_r)
+
+        # ── Border ────────────────────────────────────────────────────────────
+        p.setBrush(Qt.NoBrush)
+        p.setPen(QPen(QColor("#484848"), 1))
+        p.drawRoundedRect(QRectF(0.5, 0.5, W - 1, H - 1), radius, radius)
+
+        p.end()
 
 
 class _CollapsibleSection(QWidget):
@@ -112,6 +327,19 @@ class MainWindow(QWidget):
         self.gaming_brightness     = s["gaming_brightness"]
         self.gaming_contrast       = s["gaming_contrast"]
         self.focus_delay           = int(s["focus_delay"])
+
+        # Circadian engine
+        self._circadian = CircadianEngine(
+            lat             = float(s["circadian_lat"]),
+            lon             = float(s["circadian_lon"]),
+            bri_min         = int(s["circadian_bri_min"]),
+            bri_max         = int(s["circadian_bri_max"]),
+            warmth_enabled  = bool(s["circadian_warmth_enabled"]),
+            warmth_max      = int(s["circadian_warmth_max"]),
+        )
+        self._circadian.enabled      = bool(s["circadian_enabled"])
+        self._circadian_city         = str(s["circadian_city"])
+        self._circadian_bri_before: int | None = None  # snapshot taken at enable time
         # Exclusion set — processes that never trigger gaming mode (matched lowercase)
         self._gaming_exclusions: set[str] = {
             p.strip().lower() for p in s["gaming_exclusions"] if p.strip()
@@ -277,18 +505,20 @@ class MainWindow(QWidget):
         self.mon_l.setSpacing(8)
         self.main_l.addLayout(self.mon_l)
 
-        self.main_l.addWidget(self._sep())
+        self.main_l.addWidget(self._group_sep(_("RÉGLAGES")))
 
-        # Advanced settings as collapsible panels
         self._build_sync_section()
         self._build_gamma_section()
         self._build_focus_section()
         self._build_gaming_section()
         self._build_snapshot_section()
 
-        self.main_l.addWidget(self._sep())
+        self.main_l.addWidget(self._group_sep(_("AUTOMATISATION")))
+        self._build_circadian_section()
         self._build_app_rules_section()
         self._build_named_profiles_section()
+
+        self.main_l.addWidget(self._group_sep(_("APPLICATION")))
         self._build_tools_section()
         self._build_settings_section()
 
@@ -510,6 +740,7 @@ class MainWindow(QWidget):
         self.btn_focus.setCursor(Qt.PointingHandCursor)
         self.btn_focus.setToolTip(_("Suspendu automatiquement quand le Mode Jeu détecte un plein écran."))
         self.btn_focus.toggled.connect(lambda v: self.set_focus_enabled(v, source="ui"))
+
         h.addWidget(lbl_help)
         h.addStretch()
         h.addWidget(self.btn_focus)
@@ -577,6 +808,7 @@ class MainWindow(QWidget):
             "Les autres écrans restent librement ajustables. Tout est restauré à la sortie."
         ))
         self.btn_gaming.toggled.connect(lambda v: self.set_gaming_mode_enabled(v, source="ui"))
+
         h.addWidget(lbl_help)
         h.addStretch()
         h.addWidget(self.btn_gaming)
@@ -654,6 +886,166 @@ class MainWindow(QWidget):
 
         self.main_l.addWidget(sec)
 
+    def _build_circadian_section(self) -> None:
+        sec = _CollapsibleSection(_("LUMINOSITÉ CIRCADIENNE"), expanded=False)
+
+        # ── Toggle row ────────────────────────────────────────────────────────
+        h_top = QHBoxLayout()
+        lbl_desc = QLabel(_("Suit le soleil — luminosité automatique lever/coucher."))
+        lbl_desc.setObjectName("Subtle")
+        lbl_desc.setWordWrap(True)
+        self._btn_circadian = QPushButton(_("Désactivé"))
+        self._btn_circadian.setObjectName("FocusToggle")
+        self._btn_circadian.setCheckable(True)
+        self._btn_circadian.setCursor(Qt.PointingHandCursor)
+        self._btn_circadian.toggled.connect(self._set_circadian_enabled)
+
+        h_top.addWidget(lbl_desc)
+        h_top.addStretch()
+        h_top.addWidget(self._btn_circadian)
+        sec.add_layout(h_top)
+
+        # ── Curve widget ──────────────────────────────────────────────────────
+        self._curve_widget = _CircadianCurveWidget(self._circadian)
+        self._curve_widget.setContentsMargins(0, 4, 0, 4)
+        sec.add_widget(self._curve_widget)
+
+        # ── Sun info label (kept for accessible text / screen readers) ────────
+        self._lbl_sun_times = QLabel("")
+        self._lbl_sun_times.setObjectName("Subtle")
+        self._lbl_sun_times.setVisible(False)   # info is shown on the curve
+        sec.add_widget(self._lbl_sun_times)
+
+        # ── City picker ───────────────────────────────────────────────────────
+        city_row = QHBoxLayout()
+        lbl_city = QLabel(_("Ville"))
+        lbl_city.setObjectName("Subtle")
+        lbl_city.setFixedWidth(76)
+        self._cmb_city = QComboBox()
+        for _cname, _clat, _clon in PRESET_CITIES:
+            self._cmb_city.addItem(_(_cname))
+        # Select saved city
+        city_names = [_(n) for n, _la, _lo in PRESET_CITIES]
+        saved = _(self._circadian_city)
+        idx = city_names.index(saved) if saved in city_names else 0
+        self._cmb_city.setCurrentIndex(idx)
+        self._cmb_city.currentIndexChanged.connect(self._on_city_changed)
+        city_row.addWidget(lbl_city)
+        city_row.addWidget(self._cmb_city, stretch=1)
+        city_row.addSpacing(4)
+        city_row.addWidget(self._help_btn(_(
+            "La luminosité suit une courbe cosinus entre le lever et le coucher du soleil, "
+            "avec un pic au zénith.\n\n"
+            "Avant le lever et après le coucher : luminosité minimale.\n"
+            "Compatible avec le Mode Focus (atténue les écrans inactifs par rapport à la cible).\n"
+            "Suspendu automatiquement en Mode Jeu."
+        )))
+        sec.add_layout(city_row)
+
+        # ── Custom lat / lon (shown only when "Personnalisé" is selected) ─────
+        self._custom_coords_widget = QWidget()
+        coords_l = QVBoxLayout(self._custom_coords_widget)
+        coords_l.setContentsMargins(0, 0, 0, 0)
+        coords_l.setSpacing(4)
+
+        for attr, label, val, lo, hi in [
+            ("_spin_lat", _("Latitude"),  self._circadian.lat, -90.0,  90.0),
+            ("_spin_lon", _("Longitude"), self._circadian.lon, -180.0, 180.0),
+        ]:
+            row = QHBoxLayout()
+            lbl = QLabel(label)
+            lbl.setObjectName("Subtle")
+            lbl.setFixedWidth(76)
+            spin = QDoubleSpinBox()
+            spin.setRange(lo, hi)
+            spin.setDecimals(4)
+            spin.setSingleStep(0.1)
+            spin.setValue(val)
+            spin.valueChanged.connect(self._on_coords_changed)
+            row.addWidget(lbl)
+            row.addWidget(spin, stretch=1)
+            coords_l.addLayout(row)
+            setattr(self, attr, spin)
+
+        self._custom_coords_widget.setVisible(
+            self._cmb_city.currentIndex() == len(PRESET_CITIES) - 1
+        )
+        sec.add_widget(self._custom_coords_widget)
+
+        # ── Min / max brightness sliders ──────────────────────────────────────
+        for attr, label, default, lbl_attr in [
+            ("_sl_circ_min", _("Lum. min"),  self._circadian.bri_min, "_lbl_circ_min"),
+            ("_sl_circ_max", _("Lum. max"),  self._circadian.bri_max, "_lbl_circ_max"),
+        ]:
+            row = QHBoxLayout()
+            lbl = QLabel(label)
+            lbl.setObjectName("Subtle")
+            lbl.setFixedWidth(76)
+            sl = QSlider(Qt.Horizontal)
+            sl.setRange(0, 100)
+            sl.setValue(default)
+            val_lbl = QLabel(f"{default}%")
+            val_lbl.setObjectName("ValueBadge")
+            val_lbl.setFixedWidth(40)
+            val_lbl.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+            sl.valueChanged.connect(lambda v, l=val_lbl: l.setText(f"{v}%"))
+            sl.sliderReleased.connect(self._on_circadian_range_changed)
+            row.addWidget(lbl)
+            row.addWidget(sl)
+            row.addWidget(val_lbl)
+            sec.add_layout(row)
+            setattr(self, attr, sl)
+            setattr(self, lbl_attr, val_lbl)
+
+        # ── Warmth (circadian colour temperature) ────────────────────────────
+        warmth_toggle_row = QHBoxLayout()
+        lbl_warmth_toggle = QLabel(_("Chaleur circadienne"))
+        lbl_warmth_toggle.setObjectName("Subtle")
+        self._chk_circ_warmth = QPushButton(_("Désactivé"))
+        self._chk_circ_warmth.setObjectName("FocusToggle")
+        self._chk_circ_warmth.setCheckable(True)
+        self._chk_circ_warmth.setChecked(self._circadian.warmth_enabled)
+        self._chk_circ_warmth.setText(
+            _("Activé") if self._circadian.warmth_enabled else _("Désactivé"))
+        self._chk_circ_warmth.setCursor(Qt.PointingHandCursor)
+        self._chk_circ_warmth.toggled.connect(self._set_circadian_warmth_enabled)
+
+        warmth_toggle_row.addWidget(lbl_warmth_toggle)
+        warmth_toggle_row.addStretch()
+        warmth_toggle_row.addWidget(self._chk_circ_warmth)
+        sec.add_layout(warmth_toggle_row)
+
+        warmth_max_row = QHBoxLayout()
+        lbl_warmth_max = QLabel(_("Chaleur max"))
+        lbl_warmth_max.setObjectName("Subtle")
+        lbl_warmth_max.setFixedWidth(76)
+        self._sl_circ_warmth = QSlider(Qt.Horizontal)
+        self._sl_circ_warmth.setObjectName("SliderWarmth")
+        self._sl_circ_warmth.setRange(0, 100)
+        self._sl_circ_warmth.setValue(self._circadian.warmth_max)
+        self._lbl_circ_warmth_val = QLabel(f"{self._circadian.warmth_max}%")
+        self._lbl_circ_warmth_val.setObjectName("ValueBadge")
+        self._lbl_circ_warmth_val.setFixedWidth(40)
+        self._lbl_circ_warmth_val.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        self._sl_circ_warmth.valueChanged.connect(self._on_circadian_warmth_max_changed)
+        warmth_max_row.addWidget(lbl_warmth_max)
+        warmth_max_row.addWidget(self._sl_circ_warmth)
+        warmth_max_row.addWidget(self._lbl_circ_warmth_val)
+        self._warmth_max_widget = QWidget()
+        _wml = QVBoxLayout(self._warmth_max_widget)
+        _wml.setContentsMargins(0, 0, 0, 0)
+        _wml.addLayout(warmth_max_row)
+        self._warmth_max_widget.setVisible(self._circadian.warmth_enabled)
+        sec.add_widget(self._warmth_max_widget)
+
+        # ── Current target preview ────────────────────────────────────────────
+        self._lbl_circ_target = QLabel("")
+        self._lbl_circ_target.setObjectName("Subtle")
+        sec.add_widget(self._lbl_circ_target)
+
+        self.main_l.addWidget(sec)
+        self._update_circadian_labels()
+
     def _build_app_rules_section(self) -> None:
         sec = _CollapsibleSection(_("PROFILS AUTOMATIQUES"), expanded=False)
 
@@ -690,7 +1082,6 @@ class MainWindow(QWidget):
         self.main_l.addWidget(sec)
 
     def _build_tools_section(self) -> None:
-        self.main_l.addWidget(self._section_label(_("OUTILS")))
         h = QHBoxLayout()
         h.setSpacing(6)
         btn_patterns = QPushButton(_("Patterns plein écran"))
@@ -845,7 +1236,8 @@ class MainWindow(QWidget):
         self.sl_warmth.setEnabled(self.night_mode_enabled)
         self.lbl_warmth_val = QLabel(f"{self.night_warmth}%")
         self.lbl_warmth_val.setObjectName("ValueBadge")
-        self.lbl_warmth_val.setFixedWidth(34)
+        self.lbl_warmth_val.setFixedWidth(40)
+        self.lbl_warmth_val.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         self.sl_warmth.valueChanged.connect(self._set_night_warmth)
         warmth_row.addWidget(lbl_warmth)
         warmth_row.addWidget(self.sl_warmth, stretch=1)
@@ -968,6 +1360,21 @@ class MainWindow(QWidget):
         lbl.setObjectName("SectionTitle")
         return lbl
 
+    def _group_sep(self, text: str) -> QWidget:
+        """Labeled group separator — accent title + thin line, creates visual hierarchy."""
+        w = QWidget()
+        vl = QVBoxLayout(w)
+        vl.setContentsMargins(0, 0, 0, 0)
+        vl.setSpacing(0)
+        lbl = QLabel(text)
+        lbl.setObjectName("GroupTitle")
+        vl.addWidget(lbl)
+        line = QFrame()
+        line.setObjectName("Separator")
+        line.setFrameShape(QFrame.HLine)
+        vl.addWidget(line)
+        return w
+
     def _help_btn(self, tooltip: str) -> QPushButton:
         """Small circular '?' button that shows *tooltip* on hover and on click."""
         btn = QPushButton("?")
@@ -1028,6 +1435,12 @@ class MainWindow(QWidget):
         self.sl_focus_delay.blockSignals(False)
         self.lbl_focus_delay_val.setText(f"{self.focus_delay}s")
 
+        if self._circadian.enabled:
+            self._btn_circadian.blockSignals(True)
+            self._btn_circadian.setChecked(True)
+            self._btn_circadian.setText(_("Activé"))
+            self._btn_circadian.blockSignals(False)
+
         if self.gaming_enabled:
             self.btn_gaming.blockSignals(True)
             self.btn_gaming.setChecked(True)
@@ -1058,6 +1471,14 @@ class MainWindow(QWidget):
             "gaming_contrast":       self.gaming_contrast,
             "gaming_exclusions":     sorted(self._gaming_exclusions),
             "focus_delay":           self.focus_delay,
+            "circadian_enabled":        self._circadian.enabled,
+            "circadian_lat":            self._circadian.lat,
+            "circadian_lon":            self._circadian.lon,
+            "circadian_bri_min":        self._circadian.bri_min,
+            "circadian_bri_max":        self._circadian.bri_max,
+            "circadian_city":           self._circadian_city,
+            "circadian_warmth_enabled": self._circadian.warmth_enabled,
+            "circadian_warmth_max":     self._circadian.warmth_max,
         })
         self._rule_mgr.save(self._rules_engine.rules)
         log.debug("Settings saved.")
@@ -1125,6 +1546,8 @@ class MainWindow(QWidget):
         # Suppress app rules while gaming is active OR while the 2-s exit debounce
         # is still running — prevents brightness flickering when alt-tabbing in a game.
         gaming_active_or_pending = self._gaming_active or self._gaming_exit_timer.isActive()
+        if self._circadian.enabled and not gaming_active_or_pending:
+            self._apply_circadian()
         if not self.focus_enabled and not gaming_active_or_pending:
             self._rules_engine.poll()
 
@@ -1295,6 +1718,111 @@ class MainWindow(QWidget):
         self._pre_gaming_con.clear()
         self._gaming_device = None
         log.debug("Gaming mode: exited, restored game screen brightness/contrast")
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Circadian brightness
+    # ─────────────────────────────────────────────────────────────────────────
+
+    def _set_circadian_enabled(self, enabled: bool) -> None:
+        if enabled:
+            # Snapshot current brightness before circadian takes over
+            self._circadian_bri_before = self.sl_glob.value()
+            self._circadian.enabled = True
+            # Jump immediately to the target (no slow step on first enable)
+            t = self._circadian.target_brightness()
+            self._set_glob(t)
+            if self._circadian.warmth_enabled and not self.night_mode_enabled:
+                self._set_warmth_all(self._circadian.target_warmth())
+        else:
+            self._circadian.enabled = False
+            # Restore the pre-circadian brightness instantly
+            if self._circadian_bri_before is not None:
+                self._set_glob(self._circadian_bri_before)
+            # Reset warmth unless night mode is controlling it
+            if self._circadian.warmth_enabled and not self.night_mode_enabled:
+                self._set_warmth_all(0.0)
+        self._btn_circadian.setText(_("Activé") if enabled else _("Désactivé"))
+        self._update_circadian_labels()
+
+    def _on_city_changed(self, idx: int) -> None:
+        name, lat, lon = PRESET_CITIES[idx]
+        self._circadian_city = name
+        is_custom = (idx == len(PRESET_CITIES) - 1)
+        self._custom_coords_widget.setVisible(is_custom)
+        if not is_custom:
+            self._circadian.lat = lat
+            self._circadian.lon = lon
+            self._circadian._cache_date = None  # force sun recalculation
+        self._update_circadian_labels()
+
+    def _on_coords_changed(self) -> None:
+        self._circadian.lat = self._spin_lat.value()
+        self._circadian.lon = self._spin_lon.value()
+        self._circadian._cache_date = None
+        self._update_circadian_labels()
+
+    def _on_circadian_range_changed(self) -> None:
+        min_v = self._sl_circ_min.value()
+        max_v = self._sl_circ_max.value()
+        # Enforce min < max
+        if min_v >= max_v:
+            if self.sender() is self._sl_circ_min:
+                self._sl_circ_min.setValue(max_v - 1)
+            else:
+                self._sl_circ_max.setValue(min_v + 1)
+        self._circadian.bri_min = self._sl_circ_min.value()
+        self._circadian.bri_max = self._sl_circ_max.value()
+        self._update_circadian_labels()
+
+    def _set_warmth_all(self, warmth: float) -> None:
+        """Apply warmth to every card (GDI32 — fast, no DDC-CI)."""
+        for c in self.cards:
+            c.set_warmth(warmth)
+
+    def _set_circadian_warmth_enabled(self, enabled: bool) -> None:
+        self._circadian.warmth_enabled = enabled
+        self._chk_circ_warmth.setText(_("Activé") if enabled else _("Désactivé"))
+        self._warmth_max_widget.setVisible(enabled)
+        if not self.night_mode_enabled:
+            # Apply target immediately; the poll will keep it in sync every 500 ms
+            if enabled and self._circadian.enabled:
+                self._set_warmth_all(self._circadian.target_warmth())
+            elif not enabled:
+                self._set_warmth_all(0.0)
+
+    def _on_circadian_warmth_max_changed(self, value: int) -> None:
+        self._circadian.warmth_max = value
+        self._lbl_circ_warmth_val.setText(f"{value}%")
+
+    def _update_circadian_labels(self) -> None:
+        """Refresh the curve widget and the current target preview."""
+        if not hasattr(self, "_lbl_sun_times"):
+            return
+        self._lbl_sun_times.setText(self._circadian.sun_label())
+        if hasattr(self, "_curve_widget"):
+            self._curve_widget.refresh()
+        if self._circadian.enabled:
+            t = self._circadian.target()
+            if self._circadian.warmth_enabled:
+                w = int(round(self._circadian.target_warmth() * 100))
+                self._lbl_circ_target.setText(
+                    _("Cible : {}%  ·  chaleur {}%").format(t, w))
+            else:
+                self._lbl_circ_target.setText(_("Cible actuelle : {}%").format(t))
+        else:
+            self._lbl_circ_target.setText("")
+
+    def _apply_circadian(self) -> None:
+        """Called from _poll — moves global brightness one step toward the target."""
+        current = self.sl_glob.value()
+        nxt = self._circadian.step(current)
+        if nxt is not None and nxt != current:
+            self._set_glob(nxt)
+        # Apply warmth curve (defers to night mode if both are active)
+        if self._circadian.warmth_enabled and not self.night_mode_enabled:
+            self._set_warmth_all(self._circadian.target_warmth())
+        # Refresh label every poll tick so it stays current
+        self._update_circadian_labels()
 
     def _on_gaming_bri_changed(self) -> None:
         self.gaming_brightness = self.sl_gaming_bri.value()

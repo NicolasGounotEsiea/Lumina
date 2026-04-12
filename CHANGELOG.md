@@ -5,6 +5,23 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/).
 
 ---
 
+## [1.2.4] — 2026-04-12
+
+### Ajouté
+- **Luminosité circadienne** : nouvelle section AUTOMATISATION. Courbe cosinus (`sin(π·t)`) ancrée aux horaires réels de lever/coucher du soleil via l'algorithme NOAA (Spencer 1971) — pur Python, zéro dépendance externe. Picker de 20 villes + coordonnées personnalisées. Sliders bri. min / bri. max. Suspendu automatiquement en Mode Jeu.
+- **Chaleur circadienne** : tint chaud (GDI32 `SetDeviceGammaRamp`) inversement proportionnel à la courbe de luminosité — maximum la nuit, neutre à midi solaire. Toggle + slider `Chaleur max` dédiés. Cède la main au Mode Nuit si les deux sont actifs.
+- **Visualisation circadienne** : widget `_CircadianCurveWidget` dessiné au `QPainter` — fond `#2B2B2B` (cohérent avec les cards), zones nuit assombries, courbe remplie en dégradé ambre, grille 00/06/12/18 h, marqueurs lever/coucher pointillés, indicateur temps réel (ligne accent `#60CDFF` + dot), soleil géométrique (cercle + 8 rayons) ou croissant de lune tracé par soustraction de paths.
+- **Hiérarchie visuelle** : séparateurs de groupes étiquetés (`RÉGLAGES` / `AUTOMATISATION` / `APPLICATION`) remplaçant les lignes anes entre les sections.
+- **Restauration à la désactivation** : désactiver la luminosité circadienne restaure instantanément la luminosité et la chaleur d'avant l'activation.
+- **Heures lever/coucher corrigées** : le calcul utilisait `lon/15` comme offset UTC (heure solaire locale) au lieu de l'offset civil réel. Corrigé via `datetime.now().astimezone().utcoffset()` — les horaires correspondent maintenant à l'heure murale (ex. Paris UTC+2 en été).
+- **Formule de courbe corrigée** : `(1−cos(π·t))/2` donnait un pic au coucher du soleil, pas à midi. Remplacé par `sin(π·t)` — pic exact à midi solaire pour la luminosité et minimum à midi pour la chaleur.
+- **Label cible enrichi** : quand la chaleur circadienne est active, le label affiche `Cible : X% · chaleur Y%` pour confirmer les deux valeurs calculées en temps réel.
+
+### Amélioré
+- **Badge `ValueBadge` chaleur** : `setFixedWidth` 34 → 40 px + `AlignRight` pour l'aligner avec les autres badges de sliders.
+
+---
+
 ## [1.2.3] — 2026-04-11
 
 ### Ajouté

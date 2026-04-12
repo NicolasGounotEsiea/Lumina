@@ -27,6 +27,15 @@ DEFAULT_SETTINGS: dict = {
     "gaming_contrast":   65,
     "gaming_exclusions": ["afterfx.exe"],   # processes that never trigger gaming mode
     "focus_delay":       0,                 # seconds before focus dim kicks in (0 = instant)
+    # ── Circadian brightness ──────────────────────────────────────────────────
+    "circadian_enabled": False,
+    "circadian_lat":     48.85,             # Paris by default
+    "circadian_lon":     2.35,
+    "circadian_bri_min": 20,
+    "circadian_bri_max": 100,
+    "circadian_city":    "Paris",           # display label only
+    "circadian_warmth_enabled": False,
+    "circadian_warmth_max": 60,
 }
 
 
