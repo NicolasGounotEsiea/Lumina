@@ -30,6 +30,8 @@ a = Analysis(
         'pywintypes',
         # stdlib used at runtime
         'winreg', 'locale', 'ssl', 'urllib.request', 'urllib.error',
+        # zoneinfo + tzdata — needed for city-local sunrise/sunset times
+        'zoneinfo', 'tzdata',
     ],
     hookspath=[],
     hooksconfig={},

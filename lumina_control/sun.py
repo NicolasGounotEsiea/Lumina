@@ -34,12 +34,25 @@ def _declination(doy: int) -> float:
     return math.radians(23.45 * math.sin(math.radians((360 / 365) * (doy - 81))))
 
 
+def _resolve_utc_offset(tz_name: str | None, lon: float) -> float:
+    """Return the UTC offset in hours for *tz_name*, falling back to lon/15."""
+    if tz_name:
+        try:
+            from zoneinfo import ZoneInfo
+            return _datetime.datetime.now(tz=ZoneInfo(tz_name)).utcoffset().total_seconds() / 3600.0
+        except Exception:
+            pass
+    # Solar time fallback (used for "Personnalisé" or if tzdata is not installed)
+    return lon / 15.0
+
+
 def sun_times(
     lat: float,
     lon: float,
     d: _date | None = None,
+    tz_name: str | None = None,
 ) -> tuple[float, float]:
-    """Return (sunrise, sunset) as decimal hours in local clock time (UTC+offset).
+    """Return (sunrise, sunset) as decimal hours in the city's local clock time.
 
     Parameters
     ----------
@@ -49,6 +62,12 @@ def sun_times(
         Longitude in decimal degrees (east positive).
     d:
         Date to compute for. Defaults to today.
+    tz_name:
+        IANA timezone name for the target city (e.g. ``"America/New_York"``).
+        When provided, sunrise/sunset are expressed in that city's local time,
+        regardless of the machine's own timezone.  When ``None``, falls back to
+        the machine's civil UTC offset (original behaviour, used for
+        "Personnalisé" where the user is assumed to be in their own timezone).
 
     Returns
     -------
@@ -75,14 +94,16 @@ def sun_times(
         # Solar noon in local solar time (hours)
         eot = _eq_of_time(doy)                      # minutes
 
-        # Civil UTC offset from the OS (includes timezone + DST)
-        civil_utc_offset = (
-            _datetime.datetime.now().astimezone().utcoffset().total_seconds() / 3600.0
-        )
+        # Use the city's UTC offset, not necessarily the machine's
+        if tz_name is None:
+            # "Personnalisé": use machine civil time (user is presumably there)
+            utc_offset = _datetime.datetime.now().astimezone().utcoffset().total_seconds() / 3600.0
+        else:
+            utc_offset = _resolve_utc_offset(tz_name, lon)
 
         # Solar noon in UTC, then shifted to wall-clock time
         solar_noon_utc   = 12.0 - eot / 60.0 - lon / 15.0
-        solar_noon_local = solar_noon_utc + civil_utc_offset
+        solar_noon_local = solar_noon_utc + utc_offset
 
         sunrise = solar_noon_local - ha / 15.0
         sunset  = solar_noon_local + ha / 15.0

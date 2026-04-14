@@ -1,6 +1,7 @@
 """Main floating control panel."""
 import logging
 import math
+import os
 from functools import partial
 
 from PySide6.QtCore import Qt, QEasingCurve, QPointF, QPropertyAnimation, QRectF, QTimer, Signal
@@ -16,8 +17,11 @@ from PySide6.QtWidgets import (
 from lumina_control.circadian import CircadianEngine, PRESET_CITIES
 from lumina_control.config import (
     ACCENT_COLOR, APP_NAME, APP_WIDTH, WARM_COLOR,
-    get_named_profiles_path, get_profile_path, get_rules_path, get_settings_path,
+    get_named_profiles_path, get_profile_path, get_rules_path,
+    get_schedules_path, get_settings_path,
 )
+from lumina_control.schedules import Schedule, ScheduleManager
+from lumina_control.hotkeys import HotkeyManager, MOD_ALT, MOD_CONTROL, VK_UP, VK_DOWN, VK_F, VK_G, VK_N
 from lumina_control.i18n import _
 from lumina_control.profiles import ProfileManager
 from lumina_control.app_rules import AppRule, AppRuleManager
@@ -339,6 +343,11 @@ class MainWindow(QWidget):
         )
         self._circadian.enabled      = bool(s["circadian_enabled"])
         self._circadian_city         = str(s["circadian_city"])
+        # Restore the city's timezone so sunrise/sunset display is in city local time
+        for _cname, _clat, _clon, _ctz in PRESET_CITIES:
+            if _cname == self._circadian_city:
+                self._circadian.tz_name = _ctz
+                break
         self._circadian_bri_before: int | None = None  # snapshot taken at enable time
         # Exclusion set — processes that never trigger gaming mode (matched lowercase)
         self._gaming_exclusions: set[str] = {
@@ -355,6 +364,12 @@ class MainWindow(QWidget):
             on_rule_inactive=lambda: self._update_rule_status(None),
             on_proc_detect=self._on_proc_detect,
         )
+
+        # Schedules
+        self._schedule_mgr = ScheduleManager(get_schedules_path())
+        self._schedules: list[Schedule] = self._schedule_mgr.load()
+        self._active_schedule: Schedule | None = None
+        self._schedule_tick: int = 0   # counts 500 ms ticks toward the 60 s check
 
         # Transient runtime state
         self.cards:               list[MonitorCard] = []
@@ -387,6 +402,8 @@ class MainWindow(QWidget):
         self._apply_loaded_settings()
         self.refresh()
         self._refresh_snapshot_label()
+        # Check schedules 2 s after startup (cards are ready by then)
+        QTimer.singleShot(2000, self._check_schedules)
 
         self._poll_timer = QTimer(self)
         self._poll_timer.timeout.connect(self._poll)
@@ -396,6 +413,15 @@ class MainWindow(QWidget):
         self._updater = UpdateChecker(self)
         self._updater.update_available.connect(self._on_update_available)
         QTimer.singleShot(3000, self._updater.start)   # delay 3 s after launch
+
+        # Global hotkeys (Ctrl+Alt+↑↓ brightness, Ctrl+Alt+F focus, Ctrl+Alt+G gaming, Ctrl+Alt+N night)
+        self._hotkey_mgr = HotkeyManager()
+        self._hotkey_mgr.install_native_filter(QApplication.instance())
+        self._hotkey_mgr.register(MOD_CONTROL | MOD_ALT, VK_UP,   self._hotkey_bri_up)
+        self._hotkey_mgr.register(MOD_CONTROL | MOD_ALT, VK_DOWN, self._hotkey_bri_down)
+        self._hotkey_mgr.register(MOD_CONTROL | MOD_ALT, VK_F,    self._hotkey_focus)
+        self._hotkey_mgr.register(MOD_CONTROL | MOD_ALT, VK_G,    self._hotkey_gaming)
+        self._hotkey_mgr.register(MOD_CONTROL | MOD_ALT, VK_N,    self._hotkey_night)
 
     # ─────────────────────────────────────────────────────────────────────────
     # UI construction
@@ -517,6 +543,7 @@ class MainWindow(QWidget):
         self._build_circadian_section()
         self._build_app_rules_section()
         self._build_named_profiles_section()
+        self._build_schedules_section()
 
         self.main_l.addWidget(self._group_sep(_("APPLICATION")))
         self._build_tools_section()
@@ -922,10 +949,10 @@ class MainWindow(QWidget):
         lbl_city.setObjectName("Subtle")
         lbl_city.setFixedWidth(76)
         self._cmb_city = QComboBox()
-        for _cname, _clat, _clon in PRESET_CITIES:
+        for _cname, _clat, _clon, _ctz in PRESET_CITIES:
             self._cmb_city.addItem(_(_cname))
         # Select saved city
-        city_names = [_(n) for n, _la, _lo in PRESET_CITIES]
+        city_names = [_(n) for n, _la, _lo, _ctz in PRESET_CITIES]
         saved = _(self._circadian_city)
         idx = city_names.index(saved) if saved in city_names else 0
         self._cmb_city.setCurrentIndex(idx)
@@ -1208,6 +1235,77 @@ class MainWindow(QWidget):
         self._profile.delete_named_profile(name)
         self._refresh_named_profiles_list()
 
+    # ─────────────────────────────────────────────────────────────────────────
+    # Schedules
+    # ─────────────────────────────────────────────────────────────────────────
+
+    def _build_schedules_section(self) -> None:
+        sec = _CollapsibleSection(_("PLANIFICATION"), expanded=False)
+
+        desc = QLabel(_("Applique un profil nommé pendant une plage horaire donnée."))
+        desc.setObjectName("Subtle")
+        desc.setWordWrap(True)
+        sec.add_widget(desc)
+
+        self._lbl_schedule_status = QLabel("")
+        self._lbl_schedule_status.setObjectName("Subtle")
+        sec.add_widget(self._lbl_schedule_status)
+
+        h = QHBoxLayout()
+        btn_manage = QPushButton(_("Gérer les plages…"))
+        btn_manage.setProperty("class", "pill-muted")
+        btn_manage.setCursor(Qt.PointingHandCursor)
+        btn_manage.clicked.connect(self._open_schedules_dialog)
+        h.addStretch()
+        h.addWidget(btn_manage)
+        sec.add_layout(h)
+
+        self.main_l.addWidget(sec)
+        self._update_schedule_status()
+
+    def _update_schedule_status(self) -> None:
+        if not hasattr(self, "_lbl_schedule_status"):
+            return
+        if self._active_schedule:
+            self._lbl_schedule_status.setText(
+                _("● {}").format(self._active_schedule.name)
+            )
+        else:
+            self._lbl_schedule_status.setText(_("Aucune plage active"))
+
+    def _open_schedules_dialog(self) -> None:
+        from lumina_control.ui.schedules_dialog import SchedulesDialog
+        dlg = SchedulesDialog(
+            self._schedules,
+            self._profile.list_named_profiles(),
+            parent=self,
+        )
+        dlg.schedules_changed.connect(self._on_schedules_changed)
+        dlg.exec()
+
+    def _on_schedules_changed(self, schedules: list) -> None:
+        self._schedules = schedules
+        self._schedule_mgr.save(schedules)
+        # Re-evaluate immediately
+        self._active_schedule = None
+        self._check_schedules()
+
+    def _check_schedules(self) -> None:
+        """Apply the first active schedule's named profile (fires once per minute)."""
+        for sched in self._schedules:
+            if sched.enabled and sched.is_active_now():
+                if self._active_schedule is not sched:
+                    self._active_schedule = sched
+                    self._load_named_profile(sched.profile)
+                    log.info("Schedule '%s' active — loading profile '%s'",
+                             sched.name, sched.profile)
+                    self._update_schedule_status()
+                return
+        # No active schedule
+        if self._active_schedule is not None:
+            self._active_schedule = None
+            self._update_schedule_status()
+
     def _build_settings_section(self) -> None:
         sec = _CollapsibleSection(_("PARAMÈTRES"), expanded=False)
 
@@ -1255,11 +1353,107 @@ class MainWindow(QWidget):
         btn_onboarding.clicked.connect(self._show_onboarding)
         sec.add_widget(btn_onboarding)
 
+        sep2 = QFrame()
+        sep2.setObjectName("Separator")
+        sep2.setFrameShape(QFrame.HLine)
+        sec.add_widget(sep2)
+
+        # Hotkey reference
+        lbl_hk = QLabel(_("Raccourcis globaux"))
+        lbl_hk.setObjectName("GroupTitle")
+        lbl_hk.setStyleSheet("font-size:10px; font-weight:700; letter-spacing:0.08em;")
+        sec.add_widget(lbl_hk)
+
+        hk_info = QLabel(
+            _("Ctrl+Alt+↑ / ↓  —  Luminosité ±10%\n"
+              "Ctrl+Alt+F  —  Mode Focus\n"
+              "Ctrl+Alt+G  —  Mode Gaming\n"
+              "Ctrl+Alt+N  —  Mode Nuit")
+        )
+        hk_info.setObjectName("Subtle")
+        hk_info.setStyleSheet("font-size:11px; padding-left:4px;")
+        sec.add_widget(hk_info)
+
+        sep3 = QFrame()
+        sep3.setObjectName("Separator")
+        sep3.setFrameShape(QFrame.HLine)
+        sec.add_widget(sep3)
+
+        # Log report button
+        btn_report = QPushButton(_("Rapport de log…"))
+        btn_report.setProperty("class", "pill-muted")
+        btn_report.setCursor(Qt.PointingHandCursor)
+        btn_report.setToolTip(_("Ouvre votre messagerie avec les dernières lignes du fichier de log"))
+        btn_report.clicked.connect(self._send_log_report)
+        sec.add_widget(btn_report)
+
         self.main_l.addWidget(sec)
 
     def _show_onboarding(self) -> None:
         from lumina_control.ui.onboarding import OnboardingDialog
-        OnboardingDialog(self).exec()
+        dlg = OnboardingDialog(
+            self,
+            apply_demo=self._onboarding_apply_evening,
+            restore_demo=self._onboarding_restore,
+        )
+        dlg.exec()
+
+    def _onboarding_apply_evening(self) -> None:
+        """Apply 'Soirée' demo: 45% brightness + warm tint."""
+        self._set_glob(45)
+        self._set_warmth_all(0.6)
+
+    def _onboarding_restore(self) -> None:
+        """Restore from onboarding demo to day preset."""
+        self._set_glob(80)
+        if not self.night_mode_enabled:
+            self._set_warmth_all(0.0)
+
+    def _send_log_report(self) -> None:
+        """Open email client pre-filled with the last 60 lines of the log file."""
+        import urllib.parse
+        from lumina_control.config import get_log_dir, APP_VERSION
+        from PySide6.QtCore import QUrl
+        from PySide6.QtGui import QDesktopServices
+
+        log_path = os.path.join(get_log_dir(), "lumina.log")
+        tail = ""
+        if os.path.exists(log_path):
+            try:
+                with open(log_path, "r", encoding="utf-8", errors="replace") as f:
+                    lines = f.readlines()
+                tail = "".join(lines[-60:])
+            except OSError as exc:
+                tail = f"(impossible de lire le log : {exc})"
+        else:
+            tail = "(aucun fichier de log trouvé)"
+
+        subject = urllib.parse.quote(
+            f"Lumina Control v{APP_VERSION} — Rapport de diagnostic"
+        )
+        body = urllib.parse.quote(
+            f"Lumina Control v{APP_VERSION} — rapport de log\n"
+            f"{'=' * 52}\n{tail}"
+        )
+        QDesktopServices.openUrl(QUrl(f"mailto:?subject={subject}&body={body}"))
+
+    # ── Global hotkey callbacks ───────────────────────────────────────────────
+
+    def _hotkey_bri_up(self) -> None:
+        self._set_glob(min(100, self.sl_glob.value() + 10))
+
+    def _hotkey_bri_down(self) -> None:
+        self._set_glob(max(0, self.sl_glob.value() - 10))
+
+    def _hotkey_focus(self) -> None:
+        self.set_focus_enabled(not self.focus_enabled, source="hotkey")
+
+    def _hotkey_gaming(self) -> None:
+        self.set_gaming_mode_enabled(not self.gaming_enabled, source="hotkey")
+
+    def _hotkey_night(self) -> None:
+        new_state = not self.night_mode_enabled
+        self._chk_night.setChecked(new_state)   # triggers _set_night_mode via signal
 
     def _make_update_banner(self) -> QWidget:
         """Create the update-available banner (hidden by default)."""
@@ -1550,6 +1744,11 @@ class MainWindow(QWidget):
             self._apply_circadian()
         if not self.focus_enabled and not gaming_active_or_pending:
             self._rules_engine.poll()
+        # Schedule check once per ~60 s (120 × 500 ms ticks)
+        self._schedule_tick += 1
+        if self._schedule_tick >= 120:
+            self._schedule_tick = 0
+            self._check_schedules()
 
     # ─────────────────────────────────────────────────────────────────────────
     # App rules — UI callbacks (logic lives in RulesEngine)
@@ -1745,19 +1944,21 @@ class MainWindow(QWidget):
         self._update_circadian_labels()
 
     def _on_city_changed(self, idx: int) -> None:
-        name, lat, lon = PRESET_CITIES[idx]
+        name, lat, lon, tz_name = PRESET_CITIES[idx]
         self._circadian_city = name
         is_custom = (idx == len(PRESET_CITIES) - 1)
         self._custom_coords_widget.setVisible(is_custom)
         if not is_custom:
-            self._circadian.lat = lat
-            self._circadian.lon = lon
+            self._circadian.lat     = lat
+            self._circadian.lon     = lon
+            self._circadian.tz_name = tz_name
             self._circadian._cache_date = None  # force sun recalculation
         self._update_circadian_labels()
 
     def _on_coords_changed(self) -> None:
-        self._circadian.lat = self._spin_lat.value()
-        self._circadian.lon = self._spin_lon.value()
+        self._circadian.lat     = self._spin_lat.value()
+        self._circadian.lon     = self._spin_lon.value()
+        self._circadian.tz_name = None   # custom coords: use machine local time
         self._circadian._cache_date = None
         self._update_circadian_labels()
 

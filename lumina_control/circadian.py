@@ -39,28 +39,32 @@ from datetime import date
 from lumina_control.sun import sun_times
 
 
-# Predefined cities for the UI picker (name, lat, lon)
-PRESET_CITIES: list[tuple[str, float, float]] = [
-    ("Paris",         48.85,   2.35),
-    ("Londres",       51.51,  -0.13),
-    ("Berlin",        52.52,  13.41),
-    ("Madrid",        40.42,  -3.70),
-    ("Rome",          41.90,  12.50),
-    ("Amsterdam",     52.37,   4.90),
-    ("Bruxelles",     50.85,   4.35),
-    ("Zurich",        47.38,   8.54),
-    ("New York",      40.71, -74.01),
-    ("Los Angeles",   34.05,-118.24),
-    ("Chicago",       41.88, -87.63),
-    ("Toronto",       43.65, -79.38),
-    ("Montréal",      45.50, -73.57),
-    ("Tokyo",         35.68, 139.69),
-    ("Seoul",         37.57, 126.98),
-    ("Sydney",       -33.87, 151.21),
-    ("Dubaï",         25.20,  55.27),
-    ("Singapore",      1.35, 103.82),
-    ("São Paulo",    -23.55, -46.63),
-    ("Personnalisé",   0.0,    0.0),   # always last — triggers lat/lon inputs
+# Predefined cities for the UI picker (name, lat, lon, IANA_tz_or_None)
+# The timezone is used to compute sunrise/sunset in the city's local time rather
+# than the machine's local time — so a Paris user selecting "New York" sees
+# 06:30 / 19:30 instead of a machine-offset-shifted value.
+# "Personnalisé" has None → falls back to machine local time.
+PRESET_CITIES: list[tuple[str, float, float, str | None]] = [
+    ("Paris",         48.85,   2.35,   "Europe/Paris"),
+    ("Londres",       51.51,  -0.13,   "Europe/London"),
+    ("Berlin",        52.52,  13.41,   "Europe/Berlin"),
+    ("Madrid",        40.42,  -3.70,   "Europe/Madrid"),
+    ("Rome",          41.90,  12.50,   "Europe/Rome"),
+    ("Amsterdam",     52.37,   4.90,   "Europe/Amsterdam"),
+    ("Bruxelles",     50.85,   4.35,   "Europe/Brussels"),
+    ("Zurich",        47.38,   8.54,   "Europe/Zurich"),
+    ("New York",      40.71, -74.01,   "America/New_York"),
+    ("Los Angeles",   34.05,-118.24,   "America/Los_Angeles"),
+    ("Chicago",       41.88, -87.63,   "America/Chicago"),
+    ("Toronto",       43.65, -79.38,   "America/Toronto"),
+    ("Montréal",      45.50, -73.57,   "America/Montreal"),
+    ("Tokyo",         35.68, 139.69,   "Asia/Tokyo"),
+    ("Seoul",         37.57, 126.98,   "Asia/Seoul"),
+    ("Sydney",       -33.87, 151.21,   "Australia/Sydney"),
+    ("Dubaï",         25.20,  55.27,   "Asia/Dubai"),
+    ("Singapore",      1.35, 103.82,   "Asia/Singapore"),
+    ("São Paulo",    -23.55, -46.63,   "America/Sao_Paulo"),
+    ("Personnalisé",   0.0,    0.0,    None),   # always last — triggers lat/lon inputs
 ]
 
 
@@ -94,6 +98,7 @@ class CircadianEngine:
         warmth_enabled: bool = False,
         warmth_max: int = 60,
         step_pct: int = 2,
+        tz_name: str | None = "Europe/Paris",
     ) -> None:
         self.enabled        = False
         self.lat            = lat
@@ -103,6 +108,7 @@ class CircadianEngine:
         self.warmth_enabled = warmth_enabled
         self.warmth_max     = warmth_max
         self.step_pct       = step_pct
+        self.tz_name        = tz_name   # IANA timezone for the selected city
 
         # Cache sunrise/sunset per calendar day — recomputed when date changes
         self._cache_date: date | None = None
@@ -161,10 +167,17 @@ class CircadianEngine:
         today = date.today()
         if self._cache_date != today:
             self._cache_date = today
-            self._sunrise, self._sunset = sun_times(self.lat, self.lon, today)
+            self._sunrise, self._sunset = sun_times(self.lat, self.lon, today, self.tz_name)
 
     def _current_hour(self) -> float:
         import datetime as _dt
+        if self.tz_name:
+            try:
+                from zoneinfo import ZoneInfo
+                now = _dt.datetime.now(tz=ZoneInfo(self.tz_name))
+                return now.hour + now.minute / 60.0 + now.second / 3600.0
+            except Exception:
+                pass
         now = _dt.datetime.now()
         return now.hour + now.minute / 60.0 + now.second / 3600.0
 
@@ -182,6 +195,7 @@ class CircadianEngine:
 
     @staticmethod
     def _fmt(h: float) -> str:
+        h = h % 24.0          # normalise — sun_times can return > 24 for distant timezones
         hh = int(h)
         mm = int((h - hh) * 60)
         return f"{hh:02d}:{mm:02d}"

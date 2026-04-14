@@ -5,16 +5,37 @@ state restore.  Fully decoupled from the UI — all state changes are reported
 via callbacks provided at construction time.
 """
 import logging
+import re
 from typing import Callable
 
 from lumina_control.app_rules import AppRule
-from lumina_control.utils import get_foreground_process, get_foreground_window_monitor
+from lumina_control.utils import (
+    get_foreground_process,
+    get_foreground_window_title,
+    get_foreground_window_monitor,
+)
 
 log = logging.getLogger(__name__)
 
-# Number of consecutive 500 ms ticks with the same process before a rule fires.
-# Avoids flicker on fast alt-tab.
+# Number of consecutive 500 ms ticks with the same (process, rule) before firing.
+# Avoids flicker on fast alt-tab and title transitions.
 _STABILITY_TICKS = 2
+
+
+def _title_matches(rule: AppRule, title: str | None) -> bool:
+    """Return True if the rule's window_title pattern matches *title*.
+
+    When ``rule.window_title`` is None the rule matches any window of that
+    process.  An invalid regex falls back to case-insensitive substring match.
+    """
+    if not rule.window_title:
+        return True
+    if title is None:
+        return False
+    try:
+        return bool(re.search(rule.window_title, title, re.IGNORECASE))
+    except re.error:
+        return rule.window_title.lower() in title.lower()
 
 
 class RulesEngine:
@@ -55,7 +76,8 @@ class RulesEngine:
 
         # Detection state
         self._active_rule: AppRule | None = None
-        self._candidate: str | None = None
+        # Candidate key = (process_name, id(matched_rule)) for stability guard
+        self._candidate_key: tuple | None = None
         self._ticks: int = 0
 
         # Pre-rule snapshot (restored when the rule ends)
@@ -86,7 +108,7 @@ class RulesEngine:
         self._enabled = enabled
         if not enabled:
             self.suspend()
-            self._candidate = None
+            self._candidate_key = None
             self._ticks = 0
 
     def update_rules(self, rules: list) -> None:
@@ -95,35 +117,40 @@ class RulesEngine:
         """
         self._rules = rules
         self._active_rule = None
-        self._candidate = None
+        self._candidate_key = None
         self._ticks = 0
 
     def poll(self) -> None:
         """Called every 500 ms by the main poll timer.
 
-        Detects the foreground process, matches it against rules, and
-        applies / restores values as needed.  No-op when disabled.
+        Detects the foreground process and window title, matches them against
+        rules, and applies / restores values as needed.  No-op when disabled.
         """
         if not self._enabled:
             return
 
         proc = get_foreground_process()
-        has_match = bool(proc and any(
-            r.enabled and r.process.lower() == proc for r in self._rules
-        ))
-        self._on_proc_detect(proc, has_match)
+        title = get_foreground_window_title() if proc else None
 
-        # Find first matching enabled rule
+        # Find first matching enabled rule (process + optional title regex)
         matched: AppRule | None = None
         if proc:
             for rule in self._rules:
-                if rule.enabled and rule.process.lower() == proc:
+                if (rule.enabled
+                        and rule.process.lower() == proc
+                        and _title_matches(rule, title)):
                     matched = rule
                     break
 
-        # Stability guard — require _STABILITY_TICKS consecutive hits
-        if proc != self._candidate:
-            self._candidate = proc
+        has_match = matched is not None
+        self._on_proc_detect(proc, has_match)
+
+        # Stability guard — require _STABILITY_TICKS consecutive ticks with the
+        # same (process, rule) pair before firing.  id(matched) differentiates
+        # between rules for the same process (window-title variants).
+        candidate_key = (proc, id(matched))
+        if candidate_key != self._candidate_key:
+            self._candidate_key = candidate_key
             self._ticks = 0
             return
         self._ticks += 1
@@ -132,9 +159,7 @@ class RulesEngine:
 
         prev = self._active_rule
         # Same rule still active → nothing to do
-        if matched is not None and prev is not None and matched.process == prev.process:
-            return
-        if matched is None and prev is None:
+        if matched is prev:
             return
 
         # Leaving a rule → restore
@@ -142,7 +167,7 @@ class RulesEngine:
             self.suspend()
             return
 
-        # Entering a rule (or switching)
+        # Entering a rule (or switching to a different one)
         device = get_foreground_window_monitor()
         if not self._pre_bri:
             self._snapshot(matched, device)
@@ -183,10 +208,12 @@ class RulesEngine:
     def _apply(self, rule: AppRule, device: str | None) -> None:
         """Push rule values onto the target monitor card(s)."""
         log.debug(
-            "Applying rule '%s' on %s: bri=%s con=%s gamma=%s rgb=(%s,%s,%s)",
+            "Applying rule '%s' on %s: bri=%s con=%s gamma=%s rgb=(%s,%s,%s)"
+            " title_pattern=%r",
             rule.label, device or "all",
             rule.brightness, rule.contrast, rule.gamma,
             rule.red, rule.green, rule.blue,
+            rule.window_title,
         )
         for c in self._get_cards():
             if not c.available:

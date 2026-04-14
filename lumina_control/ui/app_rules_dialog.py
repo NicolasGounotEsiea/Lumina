@@ -52,6 +52,8 @@ class _RuleRow(QFrame):
         info.addWidget(self._lbl_name)
 
         parts = [f"<b>{rule.process}</b>"]
+        if rule.window_title:
+            parts.append(f"/{rule.window_title}/")
         if rule.brightness is not None:
             parts.append(_("Lum: {}%").format(rule.brightness))
         if rule.contrast is not None:
@@ -174,6 +176,14 @@ class _RuleFormDialog(QDialog):
         self._inp_label = QLineEdit(rule.label if rule else "")
         self._inp_label.setPlaceholderText(_("ex. VLC, Zoom, Photoshop…"))
         layout.addWidget(self._inp_label)
+
+        # ── Window title filter (optional regex) ───────────────────────────
+        layout.addWidget(self._muted_label(_("Filtre sur le titre de fenêtre (regex, optionnel)")))
+        self._inp_title = QLineEdit(
+            rule.window_title if (rule and rule.window_title) else ""
+        )
+        self._inp_title.setPlaceholderText(_("ex. Lecture en cours|Playing  — vide = toute fenêtre"))
+        layout.addWidget(self._inp_title)
 
         sep = self._make_sep()
         layout.addWidget(sep)
@@ -432,11 +442,13 @@ class _RuleFormDialog(QDialog):
         red   = None if skip_rgb else self._sl_r.value()
         green = None if skip_rgb else self._sl_g.value()
         blue  = None if skip_rgb else self._sl_b.value()
+        wt = self._inp_title.text().strip() or None
         self._result = AppRule(
             process=proc, label=label,
             brightness=bri, contrast=con, gamma=gam,
             red=red, green=green, blue=blue,
             enabled=True,
+            window_title=wt,
         )
         self.accept()
 

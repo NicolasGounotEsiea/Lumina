@@ -66,3 +66,14 @@ def get_rules_path() -> str:
 
 def get_named_profiles_path() -> str:
     return os.path.join(get_app_data_dir(), "named_profiles.json")
+
+
+def get_log_dir() -> str:
+    """Return path to the rotating-log directory, creating it if needed."""
+    log_dir = os.path.join(get_app_data_dir(), "logs")
+    os.makedirs(log_dir, exist_ok=True)
+    return log_dir
+
+
+def get_schedules_path() -> str:
+    return os.path.join(get_app_data_dir(), "schedules.json")
