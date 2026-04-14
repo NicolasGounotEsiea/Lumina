@@ -23,6 +23,12 @@ profiles.json
 # Secrets / local config
 *.env
 .env.*
+lumina_private.pem
+lumina_public.pem
+
+# Pipedream — fichiers locaux non nécessaires au repo
+pipedream/email_template.html
+pipedream/__pycache__/
 
 # Claude Code session data
 .claude/
