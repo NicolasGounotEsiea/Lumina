@@ -222,6 +222,21 @@ _EN: dict[str, str] = {
         "Ctrl+Alt+G  —  Gaming mode\n"
         "Ctrl+Alt+N  —  Night mode",
 
+    # ── licence ──────────────────────────────────────────────────────────────
+    "Activer Lumina Control":               "Activate Lumina Control",
+    "Lumina Control — Activation":          "Lumina Control — Activation",
+    "Entrez votre clé de licence pour activer le logiciel.":
+        "Enter your license key to activate the software.",
+    "Clé de licence":                       "License key",
+    "Collez votre clé ici…\n(format : xxxxxx.yyyyyy)":
+        "Paste your key here…\n(format: xxxxxx.yyyyyy)",
+    "Identifiant machine :":                "Machine ID:",
+    "Acheter une licence":                  "Buy a license",
+    "Activer":                              "Activate",
+    "Vérification…":                        "Verifying…",
+    "Veuillez entrer une clé de licence.":  "Please enter a license key.",
+    "Clé invalide.":                        "Invalid key.",
+
     # ── startup / updater ────────────────────────────────────────────────────
     "PARAMÈTRES":                       "SETTINGS",
     "Lancer au démarrage de Windows":   "Launch at Windows startup",

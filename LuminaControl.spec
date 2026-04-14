@@ -32,6 +32,11 @@ a = Analysis(
         'winreg', 'locale', 'ssl', 'urllib.request', 'urllib.error',
         # zoneinfo + tzdata — needed for city-local sunrise/sunset times
         'zoneinfo', 'tzdata',
+        # cryptography — offline license verification (Ed25519)
+        'cryptography',
+        'cryptography.hazmat.primitives.asymmetric.ed25519',
+        'cryptography.hazmat.primitives.serialization',
+        'cryptography.exceptions',
     ],
     hookspath=[],
     hooksconfig={},
