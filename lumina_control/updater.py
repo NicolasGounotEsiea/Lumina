@@ -21,9 +21,9 @@ from lumina_control.config import APP_VERSION
 
 log = logging.getLogger(__name__)
 
-_API_URL      = "https://api.github.com/repos/NicolasGounotEsiea/Lumina/releases/latest"
+_API_URL      = "https://api.github.com/repos/lumina-control-app/LuminaControl/releases/latest"
 _TIMEOUT_S    = 6
-_RELEASES_URL = "https://github.com/NicolasGounotEsiea/Lumina/releases/latest"
+_RELEASES_URL = "https://github.com/lumina-control-app/LuminaControl/releases/latest"
 
 
 def _parse_version(tag: str) -> tuple[int, ...]:
