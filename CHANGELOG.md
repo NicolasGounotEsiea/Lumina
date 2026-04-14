@@ -5,6 +5,21 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/).
 
 ---
 
+## [1.2.5] — 2026-04-15
+
+### Ajouté
+- **Système de licence Ed25519** : activation hors ligne complète par clé cryptographique. La clé `{payload_b64}.{sig_b64}` est vérifiée localement via la clé publique embarquée — aucun serveur requis. Persistance dans le registre Windows (`HKCU\SOFTWARE\LuminaControl\LicenseKey`). Binding machine optionnel (SHA256 du `MachineGuid`).
+- **Dialog d'activation** (`LicenseDialog`) : s'affiche au premier lancement si aucune licence valide n'est détectée. Champ de saisie de la clé, affichage de l'ID machine, message d'erreur explicite. L'application se ferme proprement si l'activation est annulée.
+- **Outil de génération de clés** (`gen_license.py`) : sous-commandes `keygen` (génère la paire Ed25519) et `issue` (signe une clé pour un email + plan donné).
+- **Raccourci global Ctrl+Alt+G** : bascule le Mode Jeu sans alt-tabber, depuis n'importe quelle application. Affiché dans la liste des raccourcis du panneau Paramètres.
+- **Scripts Pipedream** (`pipedream/`) : automatisation complète de la délivrance de licence — étape 1 extraction webhook LemonSqueezy, étape 2 génération Ed25519, étape 3 envoi email HTML via Gmail SMTP.
+
+### Corrigé
+- **Heures circadiennes hors fuseau local** : les villes comme New York affichaient des horaires décalés (ex. "levé 12h31") car `sun_times()` utilisait l'offset UTC de la machine. Corrigé via `zoneinfo` + `tzdata` — chaque ville utilise son propre fuseau IANA.
+- **Imports inutilisés** : `ACCENT_COLOR` et `TEXT_MUTED` retirés de `onboarding.py` et `schedules_dialog.py` (signalés par pyflakes).
+
+---
+
 ## [1.2.4] — 2026-04-12
 
 ### Ajouté
