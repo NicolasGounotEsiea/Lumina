@@ -2,7 +2,7 @@
 
 [Setup]
 AppName=Lumina Control
-AppVersion=1.2.4
+AppVersion=1.2.5
 AppPublisher=Nicolas Gounot
 DefaultDirName={pf}\Lumina Control
 DefaultGroupName=Lumina Control

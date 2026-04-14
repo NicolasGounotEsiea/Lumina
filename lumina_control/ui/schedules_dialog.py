@@ -9,7 +9,7 @@ from PySide6.QtWidgets import (
     QLineEdit, QPushButton, QScrollArea, QSpinBox, QVBoxLayout, QWidget,
 )
 
-from lumina_control.config import ACCENT_COLOR, TEXT_MUTED
+from lumina_control.config import TEXT_MUTED
 from lumina_control.i18n import _
 from lumina_control.schedules import Schedule
 

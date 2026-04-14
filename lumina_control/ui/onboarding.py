@@ -8,7 +8,6 @@ from PySide6.QtWidgets import (
     QScrollArea, QStackedWidget, QVBoxLayout, QWidget,
 )
 
-from lumina_control.config import ACCENT_COLOR, TEXT_MUTED
 from lumina_control.i18n import _
 
 log = logging.getLogger(__name__)
