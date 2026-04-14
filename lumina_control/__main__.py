@@ -112,6 +112,21 @@ def main() -> None:
     _theme_timer.timeout.connect(_check_theme)
     _theme_timer.start(5000)  # check every 5 s
 
+    # ── Vérification de licence ───────────────────────────────────────────────
+    from lumina_control.license import _DEV_BYPASS, load_stored_key, verify as _verify_lic
+    if not _DEV_BYPASS:
+        from PySide6.QtWidgets import QDialog
+        _stored = load_stored_key()
+        _lic    = _verify_lic(_stored) if _stored else None
+        if not _lic or not _lic.valid:
+            from lumina_control.ui.license_dialog import LicenseDialog
+            _lic_dlg = LicenseDialog()
+            _lic_dlg.setStyleSheet(get_stylesheet(_dark[0]))
+            if _lic_dlg.exec() != QDialog.Accepted:
+                sys.exit(0)
+            _lic = _lic_dlg.license_result
+        log.info("Licence valide — %s (%s)", _lic.email, _lic.plan)
+
     icon_path = _resolve_icon()
 
     # Detect first run before creating the tray (which writes settings)
