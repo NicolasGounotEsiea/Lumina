@@ -11,6 +11,38 @@ logging.basicConfig(
 log = logging.getLogger(__name__)
 
 
+def _setup_file_logging() -> None:
+    """Add a rotating file handler to the root logger.
+
+    Written to %APPDATA%\\LuminaControl\\logs\\lumina.log (500 KB × 3 backups).
+    The console handler keeps WARNING level; the file handler captures INFO+.
+    """
+    from logging.handlers import RotatingFileHandler
+    appdata = os.environ.get("APPDATA") or os.path.expanduser("~")
+    log_dir = os.path.join(appdata, "LuminaControl", "logs")
+    os.makedirs(log_dir, exist_ok=True)
+    log_path = os.path.join(log_dir, "lumina.log")
+
+    fh = RotatingFileHandler(
+        log_path, maxBytes=500_000, backupCount=3, encoding="utf-8"
+    )
+    fh.setLevel(logging.INFO)
+    fh.setFormatter(logging.Formatter(
+        "%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    ))
+
+    root = logging.getLogger()
+    # Lower root so INFO can reach the file handler
+    root.setLevel(logging.INFO)
+    # Lock the existing console handler at WARNING so the terminal stays clean
+    for h in root.handlers:
+        if h is not fh and not h.level:
+            h.setLevel(logging.WARNING)
+    root.addHandler(fh)
+    log.info("Lumina Control — log file ready at %s", log_path)
+
+
 def _resolve_icon() -> str:
     """Return a valid path to the app icon, creating a fallback if necessary."""
     from lumina_control.config import ICON_PATH, get_app_data_dir
@@ -50,6 +82,11 @@ def main() -> None:
         probe.disconnectFromServer()
         sys.exit(0)
 
+    # ── File logging (before any component starts) ────────────────────────────
+    _setup_file_logging()
+    from lumina_control.config import APP_VERSION
+    log.info("Lumina Control %s — startup", APP_VERSION)
+
     # ── Application setup ─────────────────────────────────────────────────────
     app = QApplication(sys.argv)
     app.setOrganizationName(APP_NAME)
@@ -88,11 +125,21 @@ def main() -> None:
     if _first_run:
         from lumina_control.ui.onboarding import OnboardingDialog
         from PySide6.QtCore import QTimer as _OTimer
-        _OTimer.singleShot(600, lambda: OnboardingDialog(tray.window).exec())
 
-    # Save settings and reset gamma on clean exit
+        def _open_onboarding() -> None:
+            dlg = OnboardingDialog(
+                tray.window,
+                apply_demo=tray.window._onboarding_apply_evening,
+                restore_demo=tray.window._onboarding_restore,
+            )
+            dlg.exec()
+
+        _OTimer.singleShot(600, _open_onboarding)
+
+    # Save settings, reset gamma and unregister hotkeys on clean exit
     app.aboutToQuit.connect(tray.window.save_settings)
     app.aboutToQuit.connect(tray.window.reset_gamma)
+    app.aboutToQuit.connect(tray.window._hotkey_mgr.unregister_all)
 
     # ── Single-instance server (accept activation from new instances) ─────────
     QLocalServer.removeServer(SINGLE_INSTANCE_SERVER)

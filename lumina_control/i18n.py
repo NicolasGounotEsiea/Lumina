@@ -168,6 +168,59 @@ _EN: dict[str, str] = {
         "Detection inactive — enable profiles in the main window.",
     "App en focus :":                   "Focused app:",
     "Aucun processus détecté":          "No process detected",
+    "Filtre sur le titre de fenêtre (regex, optionnel)":
+        "Window title filter (regex, optional)",
+    "ex. Lecture en cours|Playing  — vide = toute fenêtre":
+        "e.g. Now Playing|Playing  — empty = any window",
+
+    # ── schedules ────────────────────────────────────────────────────────────
+    "PLANIFICATION":                    "SCHEDULE",
+    "Applique un profil nommé pendant une plage horaire donnée.":
+        "Applies a named profile during a configured time window.",
+    "Aucune plage active":              "No active schedule",
+    "Gérer les plages…":                "Manage schedules…",
+    "Planification horaire":            "Time scheduling",
+    "Applique automatiquement un profil nommé pendant une plage horaire. "
+    "Si plusieurs plages sont actives en même temps, "
+    "la première de la liste s'applique.":
+        "Automatically applies a named profile during a time window. "
+        "If multiple schedules overlap, the first one in the list applies.",
+    "Nouvelle plage horaire":           "New schedule",
+    "Modifier la plage":                "Edit schedule",
+    "Nom de la plage":                  "Schedule name",
+    "ex. Soirée cinéma, Travail, Nuit…": "e.g. Cinema night, Work, Night…",
+    "Profil à appliquer":               "Profile to apply",
+    "— aucun profil nommé —":           "— no named profile —",
+    "Plage horaire  (ex. 22h → 7h passe minuit)":
+        "Time window  (e.g. 22h → 7h wraps midnight)",
+    "De":                               "From",
+    "à":                                "to",
+    "Jours actifs":                     "Active days",
+    "Lu":                               "Mo",
+    "Ma":                               "Tu",
+    "Me":                               "We",
+    "Je":                               "Th",
+    "Ve":                               "Fr",
+    "Sa":                               "Sa",
+    "Di":                               "Su",
+    "tous les jours":                   "every day",
+    "Ajouter une plage":                "Add schedule",
+    "Aucune plage configurée.\nCliquez sur  +  pour ajouter.":
+        "No schedules configured.\nClick  +  to add.",
+
+    # ── log report + hotkeys ─────────────────────────────────────────────────
+    "Rapport de log…":                  "Log report…",
+    "Ouvre votre messagerie avec les dernières lignes du fichier de log":
+        "Opens your email client pre-filled with the last lines of the log file",
+    "Raccourcis globaux":               "Global shortcuts",
+    "Ctrl+Alt+↑ / ↓  —  Luminosité ±10%\n"
+    "Ctrl+Alt+F  —  Mode Focus\n"
+    "Ctrl+Alt+G  —  Mode Gaming\n"
+    "Ctrl+Alt+N  —  Mode Nuit":
+        "Ctrl+Alt+↑ / ↓  —  Brightness ±10%\n"
+        "Ctrl+Alt+F  —  Focus mode\n"
+        "Ctrl+Alt+G  —  Gaming mode\n"
+        "Ctrl+Alt+N  —  Night mode",
 
     # ── startup / updater ────────────────────────────────────────────────────
     "PARAMÈTRES":                       "SETTINGS",
@@ -181,6 +234,31 @@ _EN: dict[str, str] = {
     "Sauver le profil":                 "Save profile",
     "Charger":                          "Load",
     "Aucun profil sauvegardé":          "No saved profiles",
+
+    # ── onboarding (new / changed strings) ───────────────────────────────────
+    "Vos écrans, en un coup d'œil":     "Your monitors at a glance",
+    "Lumina Control détecte vos moniteurs et leur position. "
+    "DDC-CI doit être activé dans le menu OSD (boutons physiques) de chaque écran.":
+        "Lumina Control detects your monitors and their position. "
+        "DDC-CI must be enabled in the OSD menu (physical buttons) of each monitor.",
+    "Voyez la différence en direct":    "See the difference live",
+    "45 % de luminosité + teinte chaude — "
+    "Lumina Control agit sur vos écrans en 2 secondes.":
+        "45 % brightness + warm tint — "
+        "Lumina Control acts on your monitors in 2 seconds.",
+    "Appliquer":                        "Apply",
+    "Appliquez automatiquement un profil nommé pendant une plage horaire : "
+    "\"la nuit de 22h à 7h, passer en mode Cinéma\". "
+    "Aucun concurrent direct ne le fait aussi simplement sur Windows.":
+        "Automatically apply a named profile during a time window: "
+        "\"from 22:00 to 07:00, switch to Cinema mode\". "
+        "No direct competitor does this as simply on Windows.",
+    "Ctrl+Alt+↑/↓ pour régler la luminosité, Ctrl+Alt+F Focus, "
+    "Ctrl+Alt+G Gaming, Ctrl+Alt+N Nuit — sans alt-tabber pendant un jeu ou un stream.":
+        "Ctrl+Alt+↑/↓ to adjust brightness, Ctrl+Alt+F Focus, "
+        "Ctrl+Alt+G Gaming, Ctrl+Alt+N Night — without alt-tabbing during a game or stream.",
+    "🕑  Planification         → section PLANIFICATION":
+        "🕑  Scheduling            → SCHEDULE section",
 
     # ── onboarding ───────────────────────────────────────────────────────────
     "Bienvenue dans Lumina Control":    "Welcome to Lumina Control",
@@ -250,7 +328,6 @@ _EN: dict[str, str] = {
     "(ex. écran secondaire toujours 10 % moins lumineux).":
         "Link your monitors: the master drives the others absolutely or with a fixed offset "
         "(e.g. secondary screen always 10% dimmer).",
-    "Mode Focus":                       "Focus mode",
     "L'écran actif reste à pleine luminosité ; les autres sont atténués du niveau "
     "que vous choisissez. Utile pour se concentrer sur une seule fenêtre.":
         "The active screen stays at full brightness; others are dimmed by the amount you choose. "
@@ -408,7 +485,6 @@ _EN: dict[str, str] = {
     "Lier R/G/B":                       "Link R/G/B",
     "Recharger":                        "Reload",
     "Gain global":                      "Global gain",
-    "Fermer":                           "Close",
     "Afficher le pattern":              "Show pattern",
     "Masquer le pattern":               "Hide pattern",
     "Écran cible":                      "Target screen",

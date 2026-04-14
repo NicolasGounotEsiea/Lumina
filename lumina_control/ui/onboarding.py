@@ -1,5 +1,6 @@
 """First-run onboarding wizard."""
 import logging
+from typing import Callable
 
 from PySide6.QtCore import Qt, QObject, QThread, QTimer, Signal
 from PySide6.QtWidgets import (
@@ -7,6 +8,7 @@ from PySide6.QtWidgets import (
     QScrollArea, QStackedWidget, QVBoxLayout, QWidget,
 )
 
+from lumina_control.config import ACCENT_COLOR, TEXT_MUTED
 from lumina_control.i18n import _
 
 log = logging.getLogger(__name__)
@@ -23,19 +25,37 @@ class _ScanWorker(QObject):
         try:
             from lumina_control.monitor_enumerate import enumerate_monitors
             self.done.emit(enumerate_monitors())
-        except Exception as e:
-            log.debug("DDC scan failed: %s", e)
-            self.failed.emit(str(e))
+        except Exception as exc:
+            log.debug("DDC scan failed: %s", exc)
+            self.failed.emit(str(exc))
 
 
 class OnboardingDialog(QDialog):
-    """Multi-step first-run wizard."""
+    """Multi-step first-run wizard.
 
-    def __init__(self, parent=None) -> None:
+    Parameters
+    ----------
+    apply_demo:
+        Optional callback — called when the user clicks "Appliquer le profil Soirée".
+        Should apply 45 % brightness + warm tint on the real monitors.
+    restore_demo:
+        Optional callback — called when the user clicks "Restaurer" or closes the dialog
+        while the demo is active.
+    """
+
+    def __init__(
+        self,
+        parent=None,
+        apply_demo: Callable | None = None,
+        restore_demo: Callable | None = None,
+    ) -> None:
         super().__init__(parent)
         self.setWindowTitle(_("Bienvenue dans Lumina Control"))
         self.setFixedWidth(520)
         self.setWindowFlags(Qt.Dialog | Qt.WindowCloseButtonHint)
+        self._apply_demo   = apply_demo
+        self._restore_demo = restore_demo
+        self._demo_active  = False
         self._build_ui()
 
     # ── UI construction ───────────────────────────────────────────────────────
@@ -160,20 +180,20 @@ class OnboardingDialog(QDialog):
 
     def _page_welcome(self) -> QWidget:
         w = QWidget()
-        l = QVBoxLayout(w)
-        l.setContentsMargins(40, 40, 40, 24)
-        l.setSpacing(16)
+        lay = QVBoxLayout(w)
+        lay.setContentsMargins(40, 40, 40, 24)
+        lay.setSpacing(16)
 
         icon = QLabel("◈")
         icon.setObjectName("AccentIcon")
         icon.setStyleSheet("font-size: 52px;")
         icon.setAlignment(Qt.AlignCenter)
-        l.addWidget(icon)
+        lay.addWidget(icon)
 
         title = QLabel(_("Bienvenue dans Lumina Control"))
         title.setStyleSheet("font-size: 20px; font-weight: 700;")
         title.setAlignment(Qt.AlignCenter)
-        l.addWidget(title)
+        lay.addWidget(title)
 
         desc = QLabel(_(
             "Contrôlez la luminosité, le contraste et la colorimétrie "
@@ -185,7 +205,7 @@ class OnboardingDialog(QDialog):
         desc.setObjectName("Subtle")
         desc.setWordWrap(True)
         desc.setAlignment(Qt.AlignCenter)
-        l.addWidget(desc)
+        lay.addWidget(desc)
 
         # Quick summary pills
         pills_w = QWidget()
@@ -202,38 +222,82 @@ class OnboardingDialog(QDialog):
                 "font-size: 12px; font-weight: 600;"
             )
             pills_l.addWidget(p)
-        l.addWidget(pills_w)
+        lay.addWidget(pills_w)
 
-        l.addStretch()
+        lay.addStretch()
         return w
 
     def _page_ddc(self) -> QWidget:
+        """Page 2 — DDC scan + monitor list + interactive 'Soirée' demo."""
         w = QWidget()
-        l = QVBoxLayout(w)
-        l.setContentsMargins(32, 28, 32, 16)
-        l.setSpacing(12)
+        lay = QVBoxLayout(w)
+        lay.setContentsMargins(32, 28, 32, 16)
+        lay.setSpacing(12)
 
-        title = QLabel(_("Détection DDC-CI"))
+        title = QLabel(_("Vos écrans, en un coup d'œil"))
         title.setStyleSheet("font-size: 16px; font-weight: 700;")
-        l.addWidget(title)
+        lay.addWidget(title)
 
         intro = QLabel(_(
-            "DDC-CI est le protocole qui permet de contrôler vos écrans. "
-            "Il doit être activé dans le menu OSD (boutons physiques) de chaque moniteur."
+            "Lumina Control détecte vos moniteurs et leur position. "
+            "DDC-CI doit être activé dans le menu OSD (boutons physiques) de chaque écran."
         ))
         intro.setObjectName("Subtle")
         intro.setWordWrap(True)
-        l.addWidget(intro)
+        lay.addWidget(intro)
 
+        # Scan results area
         self._ddc_results = QLabel(_("Scan en cours…"))
         self._ddc_results.setObjectName("Subtle")
         self._ddc_results.setWordWrap(True)
-        l.addWidget(self._ddc_results)
+        lay.addWidget(self._ddc_results)
 
         sep = QFrame()
         sep.setObjectName("Separator")
         sep.setFrameShape(QFrame.HLine)
-        l.addWidget(sep)
+        lay.addWidget(sep)
+
+        # ── Interactive demo card ─────────────────────────────────────────────
+        if self._apply_demo:
+            demo = QFrame()
+            demo.setObjectName("Card")
+            demo_l = QHBoxLayout(demo)
+            demo_l.setContentsMargins(14, 12, 14, 12)
+            demo_l.setSpacing(12)
+
+            icon_lbl = QLabel("🌆")
+            icon_lbl.setFixedWidth(32)
+            icon_lbl.setStyleSheet("font-size: 22px;")
+            icon_lbl.setAlignment(Qt.AlignTop | Qt.AlignHCenter)
+
+            text_v = QVBoxLayout()
+            text_v.setSpacing(3)
+            demo_title = QLabel(_("Voyez la différence en direct"))
+            demo_title.setObjectName("Title")
+            demo_desc = QLabel(_(
+                "45 % de luminosité + teinte chaude — "
+                "Lumina Control agit sur vos écrans en 2 secondes."
+            ))
+            demo_desc.setObjectName("Subtle")
+            demo_desc.setWordWrap(True)
+            text_v.addWidget(demo_title)
+            text_v.addWidget(demo_desc)
+
+            self._btn_demo = QPushButton(_("Appliquer"))
+            self._btn_demo.setProperty("class", "pill")
+            self._btn_demo.setFixedWidth(100)
+            self._btn_demo.setCursor(Qt.PointingHandCursor)
+            self._btn_demo.clicked.connect(self._toggle_demo)
+
+            demo_l.addWidget(icon_lbl, 0, Qt.AlignTop)
+            demo_l.addLayout(text_v, stretch=1)
+            demo_l.addWidget(self._btn_demo, 0, Qt.AlignVCenter)
+            lay.addWidget(demo)
+
+        sep2 = QFrame()
+        sep2.setObjectName("Separator")
+        sep2.setFrameShape(QFrame.HLine)
+        lay.addWidget(sep2)
 
         self._ddc_warn = QLabel(_(
             "Si un écran est marqué indisponible :\n"
@@ -243,12 +307,7 @@ class OnboardingDialog(QDialog):
         ))
         self._ddc_warn.setObjectName("Subtle")
         self._ddc_warn.setWordWrap(True)
-        l.addWidget(self._ddc_warn)
-
-        sep2 = QFrame()
-        sep2.setObjectName("Separator")
-        sep2.setFrameShape(QFrame.HLine)
-        l.addWidget(sep2)
+        lay.addWidget(self._ddc_warn)
 
         tip = QLabel(_(
             "💡  Vous pouvez relancer ce scan à tout moment via le bouton ↻ "
@@ -256,9 +315,9 @@ class OnboardingDialog(QDialog):
         ))
         tip.setObjectName("Subtle")
         tip.setWordWrap(True)
-        l.addWidget(tip)
+        lay.addWidget(tip)
 
-        l.addStretch()
+        lay.addStretch()
         return w
 
     def _page_screen_control(self) -> QWidget:
@@ -299,13 +358,17 @@ class OnboardingDialog(QDialog):
              _("Associez un préréglage (luminosité, contraste, gamma, gains RGB) à un exécutable. "
                "Lumina Control détecte automatiquement l'application au premier plan et "
                "applique les réglages — puis les restaure dès que vous changez d'application.")),
+            ("🕑", _("Planification horaire"),
+             _("Appliquez automatiquement un profil nommé pendant une plage horaire : "
+               "\"la nuit de 22h à 7h, passer en mode Cinéma\". "
+               "Aucun concurrent direct ne le fait aussi simplement sur Windows.")),
+            ("⌨", _("Raccourcis globaux"),
+             _("Ctrl+Alt+↑/↓ pour régler la luminosité, Ctrl+Alt+F Focus, "
+               "Ctrl+Alt+G Gaming, Ctrl+Alt+N Nuit — sans alt-tabber pendant un jeu ou un stream.")),
             ("📁", _("Profils nommés"),
              _("Sauvegardez l'état complet de tous vos écrans (luminosité, contraste, gamma) "
                "sous un nom personnalisé, et rechargez-le en un clic. "
                "Idéal pour alterner entre une configuration \"Travail\" et \"Cinéma\".")),
-            ("💾", _("Sauvegarde rapide"),
-             _("Mémorisez l'état actuel en un clic avant d'expérimenter, "
-               "et restaurez-le instantanément si le résultat ne vous convient pas.")),
             ("🎨", _("Calibrage RGB & Gamma GPU"),
              _("Ajustez finement les gains Rouge / Vert / Bleu via DDC-CI pour corriger les "
                "dominantes de couleur. Le gamma GPU (GDI32) agit indépendamment du DDC-CI "
@@ -318,20 +381,20 @@ class OnboardingDialog(QDialog):
 
     def _page_done(self) -> QWidget:
         w = QWidget()
-        l = QVBoxLayout(w)
-        l.setContentsMargins(40, 40, 40, 24)
-        l.setSpacing(16)
-        l.setAlignment(Qt.AlignCenter)
+        lay = QVBoxLayout(w)
+        lay.setContentsMargins(40, 40, 40, 24)
+        lay.setSpacing(16)
+        lay.setAlignment(Qt.AlignCenter)
 
         icon = QLabel("✓")
         icon.setStyleSheet("font-size: 52px; color: #6CCB5F;")
         icon.setAlignment(Qt.AlignCenter)
-        l.addWidget(icon)
+        lay.addWidget(icon)
 
         title = QLabel(_("Tout est prêt !"))
         title.setStyleSheet("font-size: 20px; font-weight: 700;")
         title.setAlignment(Qt.AlignCenter)
-        l.addWidget(title)
+        lay.addWidget(title)
 
         desc = QLabel(_(
             "Lumina Control est actif dans la barre des tâches.\n"
@@ -342,7 +405,7 @@ class OnboardingDialog(QDialog):
         desc.setObjectName("Subtle")
         desc.setWordWrap(True)
         desc.setAlignment(Qt.AlignCenter)
-        l.addWidget(desc)
+        lay.addWidget(desc)
 
         # Quick reminder of key sections
         reminder = QFrame()
@@ -360,6 +423,7 @@ class OnboardingDialog(QDialog):
             _("🌙  Mode Nuit             → section PARAMÈTRES"),
             _("🎮  Mode Jeu              → section MODE JEU"),
             _("⚙  Profils par app       → section PROFILS AUTOMATIQUES"),
+            _("🕑  Planification         → section PLANIFICATION"),
             _("📁  Profils nommés        → section PROFILS NOMMÉS"),
             _("🎨  Calibrage             → bouton ⚙ sur chaque écran"),
         ]
@@ -368,10 +432,38 @@ class OnboardingDialog(QDialog):
             lbl.setObjectName("Subtle")
             lbl.setStyleSheet("font-size: 12px;")
             rem_l.addWidget(lbl)
-        l.addWidget(reminder)
+        lay.addWidget(reminder)
 
-        l.addStretch()
+        lay.addStretch()
         return w
+
+    # ── Demo (interactive brightness preview) ─────────────────────────────────
+
+    def _toggle_demo(self) -> None:
+        if not self._demo_active:
+            if self._apply_demo:
+                self._apply_demo()
+            self._demo_active = True
+            if hasattr(self, "_btn_demo"):
+                self._btn_demo.setText(_("Restaurer"))
+                self._btn_demo.setProperty("class", "pill-muted")
+                self._btn_demo.style().unpolish(self._btn_demo)
+                self._btn_demo.style().polish(self._btn_demo)
+        else:
+            if self._restore_demo:
+                self._restore_demo()
+            self._demo_active = False
+            if hasattr(self, "_btn_demo"):
+                self._btn_demo.setText(_("Appliquer"))
+                self._btn_demo.setProperty("class", "pill")
+                self._btn_demo.style().unpolish(self._btn_demo)
+                self._btn_demo.style().polish(self._btn_demo)
+
+    def closeEvent(self, event) -> None:  # noqa: N802
+        """Restore demo state if the user closes the dialog while it's active."""
+        if self._demo_active and self._restore_demo:
+            self._restore_demo()
+        super().closeEvent(event)
 
     # ── DDC scan (background thread) ──────────────────────────────────────────
 

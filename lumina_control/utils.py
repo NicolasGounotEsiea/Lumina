@@ -157,6 +157,18 @@ def get_user_processes() -> list[tuple[str, str]]:
     return sorted(results.items())
 
 
+def get_foreground_window_title() -> str | None:
+    """Return the title of the current foreground window, or None on failure."""
+    try:
+        hwnd = win32gui.GetForegroundWindow()
+        if not hwnd:
+            return None
+        title = win32gui.GetWindowText(hwnd)
+        return title if title else None
+    except Exception:
+        return None
+
+
 def get_foreground_window_monitor() -> str | None:
     """Return the device name (e.g. r'\\\\.\\DISPLAY1') of the monitor that
     contains the current foreground window.  Returns None on any failure."""

@@ -11,15 +11,16 @@ log = logging.getLogger(__name__)
 
 @dataclass
 class AppRule:
-    process:    str            # exe name matched case-insensitively, e.g. "vlc.exe"
-    label:      str            # display name
-    brightness: int | None     # 0-100, or None = don't touch
-    contrast:   int | None     # 0-100, or None = don't touch
-    gamma:      float | None   # e.g. 1.0, or None = don't touch
-    red:        int | None = None   # DDC VCP 0x16, 0-100, or None = don't touch
-    green:      int | None = None   # DDC VCP 0x18, 0-100, or None = don't touch
-    blue:       int | None = None   # DDC VCP 0x1A, 0-100, or None = don't touch
-    enabled:    bool = True
+    process:      str            # exe name matched case-insensitively, e.g. "vlc.exe"
+    label:        str            # display name
+    brightness:   int | None     # 0-100, or None = don't touch
+    contrast:     int | None     # 0-100, or None = don't touch
+    gamma:        float | None   # e.g. 1.0, or None = don't touch
+    red:          int | None = None   # DDC VCP 0x16, 0-100, or None = don't touch
+    green:        int | None = None   # DDC VCP 0x18, 0-100, or None = don't touch
+    blue:         int | None = None   # DDC VCP 0x1A, 0-100, or None = don't touch
+    enabled:      bool = True
+    window_title: str | None = None   # regex matched on foreground window title; None = any
 
 
 # ── Built-in defaults ─────────────────────────────────────────────────────────
@@ -67,16 +68,18 @@ class AppRuleManager:
                 r   = d.get("red")
                 g   = d.get("green")
                 b   = d.get("blue")
+                wt = d.get("window_title")
                 rules.append(AppRule(
-                    process    = str(d.get("process", "")).lower(),
-                    label      = str(d.get("label", d.get("process", ""))),
-                    brightness = int(bri) if bri is not None else None,
-                    contrast   = int(con) if con is not None else None,
-                    gamma      = float(gam) if gam is not None else None,
-                    red        = int(r) if r is not None else None,
-                    green      = int(g) if g is not None else None,
-                    blue       = int(b) if b is not None else None,
-                    enabled    = bool(d.get("enabled", True)),
+                    process      = str(d.get("process", "")).lower(),
+                    label        = str(d.get("label", d.get("process", ""))),
+                    brightness   = int(bri) if bri is not None else None,
+                    contrast     = int(con) if con is not None else None,
+                    gamma        = float(gam) if gam is not None else None,
+                    red          = int(r) if r is not None else None,
+                    green        = int(g) if g is not None else None,
+                    blue         = int(b) if b is not None else None,
+                    enabled      = bool(d.get("enabled", True)),
+                    window_title = str(wt) if wt else None,
                 ))
             return rules
         except Exception as e:
