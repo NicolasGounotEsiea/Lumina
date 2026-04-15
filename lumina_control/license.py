@@ -39,7 +39,7 @@ log = logging.getLogger(__name__)
 # Remplacer ce placeholder après avoir lancé : python gen_license.py keygen
 _PUBLIC_KEY_PEM: bytes = b"""\
 -----BEGIN PUBLIC KEY-----
-MCowBQYDK2VwAyEAQYhsK5bhidFJ9fY0VtZdzeJ5vUiHjqOiPbv6glk9SM0=
+MCowBQYDK2VwAyEAm0HfReE1eH6f42QdA1R+K2cBsCGAVt+vzrxACWm2SAE=
 -----END PUBLIC KEY-----
 """
 
