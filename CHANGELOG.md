@@ -5,6 +5,13 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/).
 
 ---
 
+## [1.2.6] — 2026-04-15
+
+### Sécurité
+- **Rotation de la clé Ed25519** : nouvelle paire de clés générée suite à une exposition accidentelle de la clé privée dans le dépôt public. Toutes les licences existantes restent valides.
+
+---
+
 ## [1.2.5] — 2026-04-15
 
 ### Ajouté
