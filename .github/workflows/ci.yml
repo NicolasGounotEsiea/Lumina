@@ -67,7 +67,7 @@ jobs:
           restore-keys: pip-py3.11-
 
       - name: Install dependencies
-        run: pip install PySide6 monitorcontrol screeninfo pywin32 pyinstaller
+        run: pip install PySide6 monitorcontrol screeninfo pywin32 pyinstaller cryptography tzdata
 
       - name: Build with PyInstaller
         run: pyinstaller LuminaControl.spec --noconfirm
