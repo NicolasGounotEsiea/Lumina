@@ -4,7 +4,7 @@ import os
 from functools import partial
 
 from PySide6.QtCore import Qt, QTimer, Signal
-from PySide6.QtGui import QColor, QPainter, QPainterPath, QPen
+from PySide6.QtGui import QColor, QFont, QPainter, QPainterPath, QPen
 from PySide6.QtWidgets import (
     QApplication, QCheckBox, QComboBox, QDialog, QHBoxLayout, QLabel,
     QMessageBox, QPushButton, QFileDialog, QSlider, QTabWidget,
@@ -32,9 +32,9 @@ class _CurveWidget(QWidget):
 
     curve_changed = Signal()
 
-    _PAD  = 14     # px margin around the plot area
-    _HIT  = 7      # px hit-test radius for control points
-    _DRAW = 5      # px drawn radius for control points
+    _PAD  = 18     # px margin around the plot area
+    _HIT  = 11     # px hit-test radius for control points
+    _DRAW = 7      # px drawn radius for control points
 
     _CH_COL: dict[str, tuple[int, int, int]] = {
         "R": (210, 65,  65),
@@ -44,7 +44,7 @@ class _CurveWidget(QWidget):
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
-        self.setFixedSize(300, 185)
+        self.setFixedSize(334, 220)
         self.setCursor(Qt.CrossCursor)
 
         self._curves: dict[str, list[tuple[float, float]]] = {
@@ -100,55 +100,74 @@ class _CurveWidget(QWidget):
     def paintEvent(self, _event) -> None:
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing)
+        p.setRenderHint(QPainter.TextAntialiasing)
 
         pad = self._PAD
         w   = self.width()  - 2 * pad
         h   = self.height() - 2 * pad
 
-        # Background
-        p.fillRect(self.rect(), QColor(26, 26, 28))
+        # ── Rounded background ────────────────────────────────────────────────
+        p.setPen(Qt.NoPen)
+        p.setBrush(QColor(13, 13, 15))
+        p.drawRoundedRect(self.rect(), 8, 8)
 
-        # Grid (4×4)
-        p.setPen(QPen(QColor(52, 52, 56), 1))
+        # ── Grid (4×4, barely visible) ────────────────────────────────────────
+        p.setPen(QPen(QColor(255, 255, 255, 11), 1))
         for i in range(1, 4):
             gx = pad + i * w // 4
             gy = pad + i * h // 4
             p.drawLine(gx, pad, gx, pad + h)
             p.drawLine(pad, gy, pad + w, gy)
 
-        # Border
-        p.setPen(QPen(QColor(70, 70, 76), 1))
-        p.drawRect(pad, pad, w, h)
-
-        # Diagonal reference (identity / linear)
-        pen_diag = QPen(QColor(80, 80, 90), 1, Qt.DashLine)
+        # ── Diagonal reference (identity / linear) ────────────────────────────
+        pen_diag = QPen(QColor(255, 255, 255, 20), 1, Qt.DashLine)
         p.setPen(pen_diag)
         p.drawLine(pad, pad + h, pad + w, pad)
 
-        # Draw inactive channels dim
+        # ── Inactive channels (ghosted but readable as reference) ─────────────
         for ch in ("R", "G", "B"):
             if ch == self._active:
                 continue
             r, g, b = self._CH_COL[ch]
-            p.setPen(QPen(QColor(r, g, b, 70), 1))
+            pen_inactive = QPen(QColor(r, g, b, 58))
+            pen_inactive.setWidthF(1.8)
+            p.setPen(pen_inactive)
             self._draw_curve_path(p, ch, pad, w, h)
 
-        # Draw active channel bright
+        # ── Active channel (full brightness) ──────────────────────────────────
         r, g, b = self._CH_COL[self._active]
-        p.setPen(QPen(QColor(r, g, b, 220), 2))
+        pen_active = QPen(QColor(r, g, b, 255))
+        pen_active.setWidthF(3.0)
+        pen_active.setCapStyle(Qt.RoundCap)
+        pen_active.setJoinStyle(Qt.RoundJoin)
+        p.setPen(pen_active)
         self._draw_curve_path(p, self._active, pad, w, h)
 
-        # Draw control points for active channel
-        pts = self._curves[self._active]
+        # ── Control points (active channel) ───────────────────────────────────
+        pts     = self._curves[self._active]
         r, g, b = self._CH_COL[self._active]
+        outline = QPen(QColor(13, 13, 15, 215), 2.0)
         for i, (x, y) in enumerate(pts):
             cx, cy = self._to_px(x, y)
             is_end = (i == 0 or i == len(pts) - 1)
-            alpha  = 150 if is_end else 240
-            p.setBrush(QColor(r, g, b, alpha))
-            p.setPen(QPen(QColor(220, 220, 220, 200), 1))
-            d = self._DRAW
+            d      = self._DRAW if is_end else self._DRAW - 1
+            p.setBrush(QColor(r, g, b, 205 if is_end else 255))
+            p.setPen(outline)
             p.drawEllipse(cx - d, cy - d, 2 * d, 2 * d)
+
+        # ── Channel label (top-right of plot) ─────────────────────────────────
+        font = QFont("Segoe UI", 9, QFont.Bold)
+        p.setFont(font)
+        p.setPen(QColor(r, g, b, 100))
+        fm  = p.fontMetrics()
+        lbl = self._active
+        p.drawText(pad + w - fm.horizontalAdvance(lbl) - 4,
+                   pad + fm.ascent() + 2, lbl)
+
+        # ── Widget border (rounded, very subtle) ──────────────────────────────
+        p.setBrush(Qt.NoBrush)
+        p.setPen(QPen(QColor(255, 255, 255, 20), 1))
+        p.drawRoundedRect(1, 1, self.width() - 2, self.height() - 2, 7, 7)
 
         p.end()
 
@@ -248,7 +267,7 @@ class CalibrationDialog(QDialog):
         self._ch_btns:  dict[str, QPushButton] = {}
 
         self.setWindowTitle(_("Calibrage : {}").format(monitor_name))
-        self.setFixedSize(370, 440)
+        self.setFixedSize(374, 460)
         self.setWindowFlags(Qt.Dialog | Qt.WindowCloseButtonHint)
 
         root = QVBoxLayout(self)
@@ -358,7 +377,7 @@ class CalibrationDialog(QDialog):
         for ch in ("R", "G", "B"):
             btn = QPushButton(ch)
             btn.setCheckable(True)
-            btn.setFixedSize(34, 26)
+            btn.setFixedSize(40, 28)
             btn.clicked.connect(partial(self._set_curve_channel, ch))
             ch_row.addWidget(btn)
             self._ch_btns[ch] = btn
@@ -404,15 +423,30 @@ class CalibrationDialog(QDialog):
     # ── Channel buttons ───────────────────────────────────────────────────────
 
     def _update_ch_btn_styles(self, active: str) -> None:
-        colors = {"R": "#cc4444", "G": "#44bb44", "B": "#4477dd"}
+        # (r, g, b) matching _CurveWidget._CH_COL
+        rgb = {"R": (210, 65, 65), "G": (65, 185, 65), "B": (65, 110, 220)}
         for ch, btn in self._ch_btns.items():
+            r, g, b = rgb[ch]
             if ch == active:
                 btn.setStyleSheet(
-                    f"QPushButton{{background:{colors[ch]};color:#fff;"
-                    f"border-radius:4px;font-weight:bold;}}"
+                    f"QPushButton{{"
+                    f"background:rgba({r},{g},{b},52);"
+                    f"border:1px solid rgba({r},{g},{b},200);"
+                    f"color:rgb({r},{g},{b});"
+                    f"border-radius:6px;font-weight:bold;font-size:12px;}}"
                 )
             else:
-                btn.setStyleSheet("")
+                btn.setStyleSheet(
+                    f"QPushButton{{"
+                    f"background:rgba(255,255,255,8);"
+                    f"border:1px solid rgba(255,255,255,28);"
+                    f"color:rgba({r},{g},{b},140);"
+                    f"border-radius:6px;font-weight:bold;font-size:12px;}}"
+                    f"QPushButton:hover{{"
+                    f"background:rgba({r},{g},{b},18);"
+                    f"border:1px solid rgba({r},{g},{b},100);"
+                    f"color:rgba({r},{g},{b},200);}}"
+                )
 
     def _set_curve_channel(self, ch: str) -> None:
         for c, btn in self._ch_btns.items():
