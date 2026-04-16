@@ -17,7 +17,11 @@
 | **Chaleur circadienne** | Tint chaud inversement proportionnel à la courbe de luminosité — maximum la nuit, neutre à midi solaire. Indépendant du Mode Nuit. |
 | **Profils par app** | Règles automatiques déclenchées par l'application en focus (500 ms) — luminosité, contraste, gamma, gains RVB ; ciblage par écran via `MonitorFromWindow`. |
 | **Colorimétrie** | Gains R/V/B DDC-CI par règle d'application, avec aperçu swatch en direct |
-| **Calibrage** | Dialog RGB par écran + assistant guidé en 6 étapes avec patterns plein écran |
+| **Calibrage RGB** | Dialog par écran : onglet Gains R/V/B DDC-CI + assistant guidé 6 étapes avec patterns plein écran |
+| **Courbes de tons & ICC** | Éditeur de courbes tonales par canal (spline monotone Fritsch-Carlson, 256 points) appliquées via `SetDeviceGammaRamp`. Export profil ICC v2 compatible Photoshop / Lightroom / DaVinci Resolve. Les courbes se composent avec gamma et chaleur sans se perdre. |
+| **Noms d'écrans (EDID)** | Résolution en deux temps : `EnumDisplayDevices` puis fallback EDID registry (`HKLM\...\DISPLAY\<model>`) — couvre tous les moniteurs PnP même sans driver EDID. |
+| **Rétroéclairage WMI** | Backend WMI pour les dalles internes (laptops) sans DDC-CI. Connexion WMI mise en cache par worker (reset-on-error). |
+| **Détection HDR** | `hdr.get_hdr_info()` via `DisplayConfig` API — remonte `hdr_supported` et `hdr_enabled` par écran (Windows Advanced Color). |
 | **Position des écrans** | `enumerate_monitors()` calcule automatiquement Gauche / Droite / Centre / Haut / Bas / Principal selon la disposition physique. |
 | **Hiérarchie visuelle** | Séparateurs de groupes étiquetés (RÉGLAGES / AUTOMATISATION / APPLICATION) dans le panneau principal. |
 | **i18n** | Détection automatique FR/EN depuis la locale système (`lumina_control/i18n.py`) |
@@ -71,6 +75,7 @@ Lumina/
 │   ├── profiles.py              # ProfileManager — snapshots & settings JSON
 │   ├── sun.py                   # Algorithme NOAA sunrise/sunset (pur Python)
 │   ├── circadian.py             # CircadianEngine — courbe bri + chaleur 24 h
+│   ├── curve_editor.py          # monotone_lut, compose_ramp, build_icc_bytes, write_icc_profile
 │   ├── utils.py                 # Gamma (gdi32), wake monitors, fullscreen, foreground
 │   ├── monitor_enumerate.py     # Énumération stable via EnumDisplayMonitors
 │   ├── app_rules.py             # AppRule dataclass + AppRuleManager
@@ -96,7 +101,8 @@ Lumina/
 | `MonitorCard` | Card par écran. Sliders bri/con/gamma, bouton power, calibrage. |
 | `CircadianEngine` | Calcule la cible de luminosité et de chaleur selon la courbe sin 24 h. |
 | `_CircadianCurveWidget` | Widget custom `QPainter` — courbe 24 h avec soleil/lune géométriques. |
-| `CalibrationDialog` | Ajustement fin des gains RGB via DDC-CI. |
+| `CalibrationDialog` | Dialog par écran, deux onglets : Gains RGB DDC-CI et Courbes de tons (+ export ICC). |
+| `_CurveWidget` | Éditeur de courbes tonales 300×185 px — clic gauche ajoute/glisse les points, clic droit retire. |
 | `CalibrationWizard` | Assistant 6 étapes intégrant `PatternWindow`. |
 | `Tray` | Wraps `QSystemTrayIcon`, possède `MainWindow`. |
 | `ProfileManager` | Lecture/écriture JSON — snapshots, settings, profils nommés. |
@@ -137,6 +143,14 @@ Chaque `MonitorCard` possède un `QThread` dédié hébergeant un `_DDCWorker`. 
 | `0x1A` | Gain Bleu |
 | `0xD6` | Power (`1`=on, `5`=standby) |
 
+### Courbes de tons & ICC (`curve_editor.py`)
+
+`monotone_lut(points)` — interpolation spline monotone cubique (Fritsch-Carlson 1980) → LUT 256 entrées 16 bits. Pas de ringing, garantie monotone entre les points de contrôle.
+
+`compose_ramp(r, g, b, gamma, warmth)` — applique gamma et teinte chaude **par-dessus** les LUTs personnalisées, sans jamais les écraser. Méthode centrale de `MonitorCard._apply_ramp()`. Avec des LUTs identité, le résultat est identique à `_build_combined_ramp`.
+
+`build_icc_bytes(r, g, b)` — profil ICC v2 minimal (9 tags, primaires sRGB adaptées D50 via Bradford) — compatible Photoshop, Lightroom, DaVinci Resolve.
+
 ### Priorité des modes (runtime)
 
 ```
@@ -176,10 +190,13 @@ Voir les [issues ouvertes](https://github.com/NicolasGounotEsiea/Lumina/issues) 
 - [ ] B9 — Raccourcis globaux (hotkeys système)
 - [x] B10 — Vérification de mise à jour (GitHub Releases API)
 - [x] B11 — Mode Jeu ciblé par écran
+- [x] B12 — Backend WMI pour dalles internes (laptops sans DDC-CI)
+- [x] B13 — EDID registry fallback pour les noms d'écrans
+- [x] B14 — Détection HDR via DisplayConfig API
 
 **Frontend**
 
-- [~] F1 — Noms d'écrans (labels automatiques OK, personnalisation manuelle non implémentée)
+- [~] F1 — Noms d'écrans (EDID registry fallback OK, personnalisation manuelle non implémentée)
 - [x] F2 — Gestion des profils nommés (liste, charger, supprimer)
 - [ ] F3 — Raccourcis clavier in-app
 - [x] F4 — Infobulle tray avec luminosité courante
@@ -194,6 +211,8 @@ Voir les [issues ouvertes](https://github.com/NicolasGounotEsiea/Lumina/issues) 
 - [x] F13 — Slider luminosité globale en temps réel
 - [x] F14 — Visualisation circadienne (courbe 24 h avec soleil/lune géométriques)
 - [x] F15 — Hiérarchie visuelle des sections (séparateurs de groupes étiquetés)
+- [x] F16 — Éditeur de courbes tonales par canal (spline Fritsch-Carlson)
+- [x] F17 — Export profil ICC v2 (compatible Photoshop, Lightroom, DaVinci Resolve)
 
 ---
 

@@ -386,6 +386,14 @@ _EN: dict[str, str] = {
         "Fine-tune Red / Green / Blue gains via DDC-CI to correct colour casts. "
         "GPU gamma (GDI32) works independently of DDC-CI "
         "and applies even if your monitor doesn't support DDC.",
+    "Gains R/V/B DDC-CI pour corriger les dominantes de couleur. "
+    "L'onglet Courbes permet d'éditer des courbes tonales par canal "
+    "(spline monotone) et d'exporter un profil ICC v2 compatible "
+    "Photoshop et DaVinci Resolve. Fonctionne même sans DDC-CI.":
+        "R/G/B DDC-CI gains to correct colour casts. "
+        "The Curves tab lets you edit per-channel tone curves "
+        "(monotone spline) and export an ICC v2 profile compatible with "
+        "Photoshop and DaVinci Resolve. Works even without DDC-CI.",
     "Rappel — où trouver chaque fonction": "Quick reference — where to find each feature",
     "☀  Luminosité globale    → barre en haut du panneau":
         "☀  Global brightness     → bar at the top of the panel",
@@ -401,8 +409,8 @@ _EN: dict[str, str] = {
         "⚙  Per-app profiles      → APP PROFILES section",
     "📁  Profils nommés        → section PROFILS NOMMÉS":
         "📁  Named profiles        → NAMED PROFILES section",
-    "🎨  Calibrage             → bouton ⚙ sur chaque écran":
-        "🎨  Calibration           → ⚙ button on each monitor card",
+    "🎨  Calibrage & courbes    → bouton ⚙ sur chaque écran":
+        "🎨  Calibration & curves  → ⚙ button on each monitor card",
 
     # ── mode priority tooltips ───────────────────────────────────────────────
     "Suspendu automatiquement quand le Mode Jeu détecte un plein écran.":
@@ -503,6 +511,27 @@ _EN: dict[str, str] = {
     "Afficher le pattern":              "Show pattern",
     "Masquer le pattern":               "Hide pattern",
     "Écran cible":                      "Target screen",
+
+    # ── calibration — tabs + curves ───────────────────────────────────────────
+    "Gains RGB":                        "RGB Gains",
+    "Courbes":                          "Curves",
+    "Canal :":                          "Channel:",
+    "Réinitialiser":                    "Reset",
+    "Appliquer la courbe":              "Apply curve",
+    "Applique les courbes via GDI32 (GPU).\n"
+    "Le slider Gamma et le Mode Nuit les remplaceront si vous les ajustez.":
+        "Applies the curves via GDI32 (GPU).\n"
+        "The Gamma slider and Night mode will override them if adjusted.",
+    "Exporter profil ICC…":             "Export ICC profile…",
+    "Génère un profil ICC v2 avec ces courbes tonales.\n"
+    "Reconnu par Photoshop, Lightroom, DaVinci Resolve…":
+        "Generates an ICC v2 profile with these tone curves.\n"
+        "Recognised by Photoshop, Lightroom, DaVinci Resolve…",
+    "Profil ICC exporté":               "ICC profile exported",
+    "Profil ICC exporté :":             "ICC profile saved:",
+    "Ouvrir":                           "Open",
+    "Erreur export ICC":                "ICC export error",
+    "L'export du profil ICC a échoué.": "ICC profile export failed.",
 
     # Calibration wizard step titles
     "Uniformité Blanc":                 "White uniformity",

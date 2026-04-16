@@ -369,9 +369,10 @@ class OnboardingDialog(QDialog):
                "sous un nom personnalisé, et rechargez-le en un clic. "
                "Idéal pour alterner entre une configuration \"Travail\" et \"Cinéma\".")),
             ("🎨", _("Calibrage RGB & Gamma GPU"),
-             _("Ajustez finement les gains Rouge / Vert / Bleu via DDC-CI pour corriger les "
-               "dominantes de couleur. Le gamma GPU (GDI32) agit indépendamment du DDC-CI "
-               "et s'applique même si votre moniteur ne supporte pas DDC.")),
+             _("Gains R/V/B DDC-CI pour corriger les dominantes de couleur. "
+               "L'onglet Courbes permet d'éditer des courbes tonales par canal "
+               "(spline monotone) et d'exporter un profil ICC v2 compatible "
+               "Photoshop et DaVinci Resolve. Fonctionne même sans DDC-CI.")),
         ]
         for icon, feat_title, feat_desc in features:
             inner.addWidget(self._feature_card(icon, feat_title, feat_desc))
@@ -424,7 +425,7 @@ class OnboardingDialog(QDialog):
             _("⚙  Profils par app       → section PROFILS AUTOMATIQUES"),
             _("🕑  Planification         → section PLANIFICATION"),
             _("📁  Profils nommés        → section PROFILS NOMMÉS"),
-            _("🎨  Calibrage             → bouton ⚙ sur chaque écran"),
+            _("🎨  Calibrage & courbes    → bouton ⚙ sur chaque écran"),
         ]
         for tip in tips:
             lbl = QLabel(tip)

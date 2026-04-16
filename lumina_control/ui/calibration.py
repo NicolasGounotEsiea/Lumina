@@ -1,11 +1,14 @@
-"""Calibration dialogs: per-monitor RGB gain and guided calibration wizard."""
+"""Calibration dialogs: per-monitor RGB gains, tone curves and guided wizard."""
 import logging
+import os
 from functools import partial
 
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import Qt, QTimer, Signal
+from PySide6.QtGui import QColor, QPainter, QPainterPath, QPen
 from PySide6.QtWidgets import (
-    QCheckBox, QComboBox, QDialog, QHBoxLayout, QLabel,
-    QPushButton, QSlider, QVBoxLayout, QApplication,
+    QApplication, QCheckBox, QComboBox, QDialog, QHBoxLayout, QLabel,
+    QMessageBox, QPushButton, QFileDialog, QSlider, QTabWidget,
+    QVBoxLayout, QWidget,
 )
 
 from lumina_control.i18n import _
@@ -14,10 +17,215 @@ from lumina_control.ui.patterns import PatternWindow
 log = logging.getLogger(__name__)
 
 
-class CalibrationDialog(QDialog):
-    """Fine-tune per-monitor RGB gains via DDC-CI VCP codes."""
+# ── Interactive tone curve widget ─────────────────────────────────────────────
 
-    # VCP codes for R/G/B gains
+class _CurveWidget(QWidget):
+    """Interactive per-channel (R/G/B) tone curve editor.
+
+    Control points in [0, 1]² space are interpolated via monotone cubic
+    spline (Fritsch-Carlson) to a 256-entry LUT used with SetDeviceGammaRamp.
+
+    - Left-click empty area  → add a control point
+    - Left-drag existing pt  → move it
+    - Right-click (non-endpoint) → delete point
+    """
+
+    curve_changed = Signal()
+
+    _PAD  = 14     # px margin around the plot area
+    _HIT  = 7      # px hit-test radius for control points
+    _DRAW = 5      # px drawn radius for control points
+
+    _CH_COL: dict[str, tuple[int, int, int]] = {
+        "R": (210, 65,  65),
+        "G": (65,  185, 65),
+        "B": (65,  110, 220),
+    }
+
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent)
+        self.setFixedSize(300, 185)
+        self.setCursor(Qt.CrossCursor)
+
+        self._curves: dict[str, list[tuple[float, float]]] = {
+            ch: [(0.0, 0.0), (1.0, 1.0)] for ch in ("R", "G", "B")
+        }
+        self._active: str = "R"
+        self._drag_idx: int | None = None
+
+    # ── Public helpers ────────────────────────────────────────────────────────
+
+    def set_channel(self, ch: str) -> None:
+        self._active = ch
+        self._drag_idx = None
+        self.update()
+
+    def reset_channel(self, ch: str | None = None) -> None:
+        target = ch or self._active
+        self._curves[target] = [(0.0, 0.0), (1.0, 1.0)]
+        self._drag_idx = None
+        self.update()
+        self.curve_changed.emit()
+
+    def get_lut(self, ch: str) -> list[int]:
+        """Return a 256-entry GDI32 LUT (0-65535) for channel *ch*."""
+        from lumina_control.curve_editor import monotone_lut
+        return monotone_lut(self._curves[ch])
+
+    # ── Coordinate helpers ────────────────────────────────────────────────────
+
+    def _to_px(self, x: float, y: float) -> tuple[int, int]:
+        w = self.width()  - 2 * self._PAD
+        h = self.height() - 2 * self._PAD
+        return (int(self._PAD + x * w),
+                int(self._PAD + (1.0 - y) * h))
+
+    def _to_norm(self, px: int, py: int) -> tuple[float, float]:
+        w = self.width()  - 2 * self._PAD
+        h = self.height() - 2 * self._PAD
+        x = max(0.0, min(1.0, (px - self._PAD) / w)) if w > 0 else 0.0
+        y = max(0.0, min(1.0, 1.0 - (py - self._PAD) / h)) if h > 0 else 0.0
+        return x, y
+
+    def _hit_test(self, px: int, py: int,
+                  pts: list[tuple[float, float]]) -> int | None:
+        for i, (x, y) in enumerate(pts):
+            cx, cy = self._to_px(x, y)
+            if abs(px - cx) <= self._HIT and abs(py - cy) <= self._HIT:
+                return i
+        return None
+
+    # ── Painting ──────────────────────────────────────────────────────────────
+
+    def paintEvent(self, _event) -> None:
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing)
+
+        pad = self._PAD
+        w   = self.width()  - 2 * pad
+        h   = self.height() - 2 * pad
+
+        # Background
+        p.fillRect(self.rect(), QColor(26, 26, 28))
+
+        # Grid (4×4)
+        p.setPen(QPen(QColor(52, 52, 56), 1))
+        for i in range(1, 4):
+            gx = pad + i * w // 4
+            gy = pad + i * h // 4
+            p.drawLine(gx, pad, gx, pad + h)
+            p.drawLine(pad, gy, pad + w, gy)
+
+        # Border
+        p.setPen(QPen(QColor(70, 70, 76), 1))
+        p.drawRect(pad, pad, w, h)
+
+        # Diagonal reference (identity / linear)
+        pen_diag = QPen(QColor(80, 80, 90), 1, Qt.DashLine)
+        p.setPen(pen_diag)
+        p.drawLine(pad, pad + h, pad + w, pad)
+
+        # Draw inactive channels dim
+        for ch in ("R", "G", "B"):
+            if ch == self._active:
+                continue
+            r, g, b = self._CH_COL[ch]
+            p.setPen(QPen(QColor(r, g, b, 70), 1))
+            self._draw_curve_path(p, ch, pad, w, h)
+
+        # Draw active channel bright
+        r, g, b = self._CH_COL[self._active]
+        p.setPen(QPen(QColor(r, g, b, 220), 2))
+        self._draw_curve_path(p, self._active, pad, w, h)
+
+        # Draw control points for active channel
+        pts = self._curves[self._active]
+        r, g, b = self._CH_COL[self._active]
+        for i, (x, y) in enumerate(pts):
+            cx, cy = self._to_px(x, y)
+            is_end = (i == 0 or i == len(pts) - 1)
+            alpha  = 150 if is_end else 240
+            p.setBrush(QColor(r, g, b, alpha))
+            p.setPen(QPen(QColor(220, 220, 220, 200), 1))
+            d = self._DRAW
+            p.drawEllipse(cx - d, cy - d, 2 * d, 2 * d)
+
+        p.end()
+
+    def _draw_curve_path(self, painter: QPainter, ch: str,
+                         pad: int, w: int, h: int) -> None:
+        from lumina_control.curve_editor import monotone_lut
+        lut  = monotone_lut(self._curves[ch])
+        path = QPainterPath()
+        for i, val in enumerate(lut):
+            px = pad + i * w // 255
+            py = pad + h - int(val / 65535.0 * h)
+            if i == 0:
+                path.moveTo(px, py)
+            else:
+                path.lineTo(px, py)
+        painter.drawPath(path)
+
+    # ── Mouse interaction ─────────────────────────────────────────────────────
+
+    def mousePressEvent(self, event) -> None:
+        pts = self._curves[self._active]
+        hit = self._hit_test(event.x(), event.y(), pts)
+
+        if event.button() == Qt.RightButton:
+            # Remove non-endpoint points on right-click
+            if hit is not None and 0 < hit < len(pts) - 1:
+                pts.pop(hit)
+                self._drag_idx = None
+                self.update()
+                self.curve_changed.emit()
+            return
+
+        if event.button() == Qt.LeftButton:
+            if hit is not None:
+                self._drag_idx = hit
+            else:
+                # Insert a new point at the clicked position
+                x, y = self._to_norm(event.x(), event.y())
+                insert_at = len(pts)
+                for j, (px, _py) in enumerate(pts):
+                    if px > x:
+                        insert_at = j
+                        break
+                pts.insert(insert_at, (x, y))
+                self._drag_idx = insert_at
+                self.update()
+                self.curve_changed.emit()
+
+    def mouseMoveEvent(self, event) -> None:
+        if self._drag_idx is None:
+            return
+        pts  = self._curves[self._active]
+        x, y = self._to_norm(event.x(), event.y())
+        idx  = self._drag_idx
+
+        # Endpoints are locked to x=0 or x=1
+        if idx == 0:
+            x = 0.0
+        elif idx == len(pts) - 1:
+            x = 1.0
+        else:
+            x = max(pts[idx - 1][0] + 0.01, min(pts[idx + 1][0] - 0.01, x))
+
+        pts[idx] = (x, y)
+        self.update()
+
+    def mouseReleaseEvent(self, event) -> None:
+        if self._drag_idx is not None:
+            self._drag_idx = None
+            self.curve_changed.emit()
+
+
+# ── Calibration dialog (tabbed: Gains RGB + Courbes) ─────────────────────────
+
+class CalibrationDialog(QDialog):
+    """Fine-tune per-monitor RGB gains (DDC-CI) and/or custom tone curves (GDI32)."""
+
     _CHANNELS = [
         ("R", 0x16, "SliderR"),
         ("G", 0x18, "SliderG"),
@@ -25,35 +233,61 @@ class CalibrationDialog(QDialog):
     ]
 
     def __init__(self, monitor_handle, monitor_name: str, device_name: str,
-                 sync_rgb_callback=None, parent=None) -> None:
+                 sync_rgb_callback=None, curves_applied_callback=None,
+                 parent=None) -> None:
         super().__init__(parent)
-        self.monitor = monitor_handle
-        self.device_name = device_name
-        self.sync_rgb_callback = sync_rgb_callback
-        self.sync_rgb = True
-        self._syncing = False
-        self._sliders: dict[int, QSlider] = {}
-        self._labels: dict[int, QLabel] = {}
-        self._loaded: dict[int, int] = {}
+        self.monitor                  = monitor_handle
+        self.device_name              = device_name
+        self.sync_rgb_callback        = sync_rgb_callback
+        self._curves_applied_callback = curves_applied_callback
+        self.sync_rgb          = True
+        self._syncing          = False
+        self._sliders:  dict[int, QSlider] = {}
+        self._labels:   dict[int, QLabel]  = {}
+        self._loaded:   dict[int, int]     = {}
+        self._ch_btns:  dict[str, QPushButton] = {}
 
-        self.setWindowTitle(_("Calibrage RGB"))
-        self.setFixedSize(360, 360)
+        self.setWindowTitle(_("Calibrage : {}").format(monitor_name))
+        self.setFixedSize(370, 440)
         self.setWindowFlags(Qt.Dialog | Qt.WindowCloseButtonHint)
 
-        layout = QVBoxLayout(self)
-        layout.setSpacing(14)
+        root = QVBoxLayout(self)
+        root.setSpacing(10)
+        root.setContentsMargins(10, 10, 10, 10)
 
-        title = QLabel(_("Calibrage : {}").format(monitor_name))
-        title.setObjectName("Title")
-        layout.addWidget(title)
+        # ── Tab widget ────────────────────────────────────────────────────────
+        self._tabs = QTabWidget()
+        self._tabs.addTab(self._build_rgb_tab(),    _("Gains RGB"))
+        self._tabs.addTab(self._build_curves_tab(), _("Courbes"))
+
+        # If no DDC-CI handle, curves-only mode
+        if self.monitor is None:
+            self._tabs.setTabEnabled(0, False)
+            self._tabs.setCurrentIndex(1)
+
+        root.addWidget(self._tabs)
+
+        btn_ok = QPushButton(_("Fermer"))
+        btn_ok.setProperty("class", "pill")
+        btn_ok.clicked.connect(self.accept)
+        root.addWidget(btn_ok)
+
+        # Trigger DDC-CI unlock only when DDC is available
+        if self.monitor is not None:
+            QTimer.singleShot(100, self._unlock_user_mode)
+
+    # ── Tab builders ──────────────────────────────────────────────────────────
+
+    def _build_rgb_tab(self) -> QWidget:
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
+        layout.setSpacing(12)
+        layout.setContentsMargins(8, 10, 8, 8)
 
         info = QLabel(_("Ajustement fin des gains RGB (si supporté par l'écran)."))
         info.setWordWrap(True)
         info.setObjectName("Subtle")
         layout.addWidget(info)
-
-        # Unlock "User Color" mode before adjusting
-        QTimer.singleShot(100, self._unlock_user_mode)
 
         # Link / reload toolbar
         tools = QHBoxLayout()
@@ -68,7 +302,7 @@ class CalibrationDialog(QDialog):
         tools.addWidget(btn_reload)
         layout.addLayout(tools)
 
-        # RGB sliders
+        # R / G / B sliders
         for label, code, obj_name in self._CHANNELS:
             row = QHBoxLayout()
             lbl = QLabel(label)
@@ -87,14 +321,14 @@ class CalibrationDialog(QDialog):
             row.addWidget(val_lbl)
             layout.addLayout(row)
             self._sliders[code] = sl
-            self._labels[code] = val_lbl
+            self._labels[code]  = val_lbl
             QTimer.singleShot(200, partial(self._load_channel, code))
 
         # Global gain slider
         gain_row = QHBoxLayout()
         lbl_gain = QLabel(_("Gain global"))
         lbl_gain.setObjectName("Subtle")
-        self.sl_gain = QSlider(Qt.Horizontal)
+        self.sl_gain  = QSlider(Qt.Horizontal)
         self.sl_gain.setRange(0, 100)
         self.lbl_gain = QLabel("--")
         self.lbl_gain.setObjectName("ValueBadge")
@@ -108,10 +342,139 @@ class CalibrationDialog(QDialog):
         layout.addLayout(gain_row)
 
         layout.addStretch()
-        btn_ok = QPushButton(_("Fermer"))
-        btn_ok.setProperty("class", "pill")
-        btn_ok.clicked.connect(self.accept)
-        layout.addWidget(btn_ok)
+        return tab
+
+    def _build_curves_tab(self) -> QWidget:
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
+        layout.setSpacing(8)
+        layout.setContentsMargins(8, 10, 8, 8)
+
+        # Channel selector
+        ch_row = QHBoxLayout()
+        lbl_ch = QLabel(_("Canal :"))
+        lbl_ch.setObjectName("Subtle")
+        ch_row.addWidget(lbl_ch)
+        for ch in ("R", "G", "B"):
+            btn = QPushButton(ch)
+            btn.setCheckable(True)
+            btn.setFixedSize(34, 26)
+            btn.clicked.connect(partial(self._set_curve_channel, ch))
+            ch_row.addWidget(btn)
+            self._ch_btns[ch] = btn
+        ch_row.addStretch()
+        layout.addLayout(ch_row)
+        self._ch_btns["R"].setChecked(True)
+        self._update_ch_btn_styles("R")
+
+        # Curve editor widget
+        self._curve_widget = _CurveWidget()
+        layout.addWidget(self._curve_widget, alignment=Qt.AlignCenter)
+
+        # Reset / Apply row
+        ctrl_row = QHBoxLayout()
+        btn_reset = QPushButton(_("Réinitialiser"))
+        btn_reset.setProperty("class", "pill-muted")
+        btn_reset.clicked.connect(self._reset_curve)
+        btn_apply = QPushButton(_("Appliquer la courbe"))
+        btn_apply.setProperty("class", "pill")
+        btn_apply.setToolTip(_(
+            "Applique les courbes via GDI32 (GPU).\n"
+            "Le slider Gamma et le Mode Nuit les remplaceront si vous les ajustez."
+        ))
+        btn_apply.clicked.connect(self._apply_curves)
+        ctrl_row.addWidget(btn_reset)
+        ctrl_row.addStretch()
+        ctrl_row.addWidget(btn_apply)
+        layout.addLayout(ctrl_row)
+
+        # ICC export
+        btn_icc = QPushButton(_("Exporter profil ICC…"))
+        btn_icc.setProperty("class", "pill-muted")
+        btn_icc.setToolTip(_(
+            "Génère un profil ICC v2 avec ces courbes tonales.\n"
+            "Reconnu par Photoshop, Lightroom, DaVinci Resolve…"
+        ))
+        btn_icc.clicked.connect(self._export_icc)
+        layout.addWidget(btn_icc)
+
+        layout.addStretch()
+        return tab
+
+    # ── Channel buttons ───────────────────────────────────────────────────────
+
+    def _update_ch_btn_styles(self, active: str) -> None:
+        colors = {"R": "#cc4444", "G": "#44bb44", "B": "#4477dd"}
+        for ch, btn in self._ch_btns.items():
+            if ch == active:
+                btn.setStyleSheet(
+                    f"QPushButton{{background:{colors[ch]};color:#fff;"
+                    f"border-radius:4px;font-weight:bold;}}"
+                )
+            else:
+                btn.setStyleSheet("")
+
+    def _set_curve_channel(self, ch: str) -> None:
+        for c, btn in self._ch_btns.items():
+            btn.setChecked(c == ch)
+        self._update_ch_btn_styles(ch)
+        self._curve_widget.set_channel(ch)
+
+    # ── Curves actions ────────────────────────────────────────────────────────
+
+    def _reset_curve(self) -> None:
+        self._curve_widget.reset_channel()
+
+    def _apply_curves(self) -> None:
+        r = self._curve_widget.get_lut("R")
+        g = self._curve_widget.get_lut("G")
+        b = self._curve_widget.get_lut("B")
+        if self._curves_applied_callback is not None:
+            # Let MonitorCard compose curves with current gamma + warmth
+            self._curves_applied_callback(r, g, b)
+        else:
+            # Fallback: apply directly (no gamma/warmth composition)
+            from lumina_control.curve_editor import set_device_gamma_ramp
+            ok = set_device_gamma_ramp(self.device_name, r, g, b)
+            if not ok:
+                log.warning("set_device_gamma_ramp returned False for %s",
+                            self.device_name)
+
+    def _export_icc(self) -> None:
+        from lumina_control.curve_editor import write_icc_profile
+        default_name = "LuminaControl_profile.icc"
+        title = _("Exporter profil ICC")
+        path, _filt = QFileDialog.getSaveFileName(
+            self,
+            title,
+            os.path.join(os.path.expanduser("~"), default_name),
+            "ICC Profile (*.icc *.icm)",
+        )
+        if not path:
+            return
+
+        r = self._curve_widget.get_lut("R")
+        g = self._curve_widget.get_lut("G")
+        b = self._curve_widget.get_lut("B")
+
+        if write_icc_profile(r, g, b, path):
+            msg = QMessageBox(self)
+            msg.setWindowTitle(_("Profil ICC exporté"))
+            msg.setText(_("Profil ICC exporté :") + "\n" + path)
+            msg.addButton(QMessageBox.Ok)
+            btn_open = msg.addButton(_("Ouvrir"), QMessageBox.ActionRole)
+            msg.exec()
+            if msg.clickedButton() is btn_open:
+                try:
+                    os.startfile(path)
+                except Exception as e:
+                    log.debug("os.startfile failed: %s", e)
+        else:
+            QMessageBox.warning(
+                self,
+                _("Erreur export ICC"),
+                _("L'export du profil ICC a échoué."),
+            )
 
     # ── DDC-CI helpers ────────────────────────────────────────────────────────
 
@@ -123,7 +486,7 @@ class CalibrationDialog(QDialog):
             log.debug("Could not unlock user colour mode: %s", e)
 
     def _load_channel(self, code: int) -> None:
-        sl = self._sliders[code]
+        sl  = self._sliders[code]
         lbl = self._labels[code]
         try:
             with self.monitor:
@@ -197,7 +560,6 @@ class CalibrationWizard(QDialog):
         {"title": "Sharpness",           "pattern": "sharpness",
          "help": "Vérifier la netteté et la sur-accentuation."},
     ]
-    # Note: titles and help texts are translated at runtime via _() in _update_ui()
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -267,14 +629,15 @@ class CalibrationWizard(QDialog):
     def _refresh_screens(self) -> None:
         self.cmb_screen.blockSignals(True)
         self.cmb_screen.clear()
-        for i, s in enumerate(QApplication.screens()):
+        for i, _s in enumerate(QApplication.screens()):
             self.cmb_screen.addItem(_("Écran {}").format(i + 1), i)
         self.cmb_screen.blockSignals(False)
         self.btn_show.setEnabled(bool(QApplication.screens()))
 
     def _update_ui(self) -> None:
         step = self.STEPS[self.step_index]
-        self.lbl_step.setText(_("Étape {} / {}").format(self.step_index + 1, len(self.STEPS)))
+        self.lbl_step.setText(_("Étape {} / {}").format(
+            self.step_index + 1, len(self.STEPS)))
         self.lbl_title.setText(_(step["title"]))
         self.lbl_help.setText(_(step["help"]))
         self.btn_prev.setEnabled(self.step_index > 0)
@@ -284,7 +647,7 @@ class CalibrationWizard(QDialog):
         screens = QApplication.screens()
         if not screens:
             return
-        idx = self.cmb_screen.currentData() or 0
+        idx        = self.cmb_screen.currentData() or 0
         pattern_id = self.STEPS[self.step_index]["pattern"]
         if self.pattern_window and self.pattern_window.isVisible():
             self.pattern_window.screen_index = idx

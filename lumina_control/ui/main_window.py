@@ -1720,6 +1720,9 @@ class MainWindow(QWidget):
         else:
             self._lbl_ddc_banner.setVisible(False)
 
+        for c in self.cards:
+            c.refresh_hdr()
+
         self.adjustSize()
         self._refresh_sync_combo()
         self._update_sync_ui()
@@ -1749,6 +1752,8 @@ class MainWindow(QWidget):
         if self._schedule_tick >= 120:
             self._schedule_tick = 0
             self._check_schedules()
+            for c in self.cards:
+                c.refresh_hdr()
 
     # ─────────────────────────────────────────────────────────────────────────
     # App rules — UI callbacks (logic lives in RulesEngine)

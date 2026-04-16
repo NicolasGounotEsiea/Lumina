@@ -28,6 +28,12 @@ a = Analysis(
         # pywin32 helpers sometimes need an explicit nudge
         'win32api', 'win32con', 'win32gui', 'win32process',
         'pywintypes',
+        # WMI — laptop screen brightness control
+        'wmi',
+        # HDR / DisplayConfig
+        'lumina_control.hdr',
+        # GDI32 curve editor + ICC v2 writer
+        'lumina_control.curve_editor',
         # stdlib used at runtime
         'winreg', 'locale', 'ssl', 'urllib.request', 'urllib.error',
         # zoneinfo + tzdata — needed for city-local sunrise/sunset times

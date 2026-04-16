@@ -10,6 +10,7 @@ from lumina_control.i18n import _
 from lumina_control.utils import set_device_gamma, wake_all_monitors
 from lumina_control.monitor_enumerate import MonitorDescriptor
 from lumina_control.ui.calibration import CalibrationDialog
+from lumina_control.hdr import set_hdr, set_auto_hdr, set_sdr_white_level
 
 log = logging.getLogger(__name__)
 
@@ -116,6 +117,86 @@ class _DDCWorker(QObject):
             log.debug("DDC RGB-dict write failed on monitor %d: %s", self._index, e)
 
 
+# ── WMI brightness worker ────────────────────────────────────────────────────
+
+class _WMIWorker(QObject):
+    """Brightness control for built-in laptop screens via Windows WMI.
+
+    Same signal/slot interface as _DDCWorker so MonitorCard can use either
+    transparently.  Only brightness is supported — contrast is not exposed
+    by WMI and is ignored silently.
+
+    The WMI connection is initialised once in ``read_initial`` and reused for
+    all subsequent ``apply_bri_con`` calls (~100 ms saved per write).  On any
+    error the cached connection is discarded and rebuilt on the next call.
+    """
+
+    read_done     = Signal(int, int)   # brightness, contrast (contrast always 50)
+    read_failed   = Signal()
+    rgb_read_done = Signal(object)     # unused — kept for interface parity
+    write_failed  = Signal()           # unused — WMI writes do not fail silently
+
+    def __init__(self, wmi_index: int, monitor_index: int) -> None:
+        super().__init__()
+        self._wmi_index  = wmi_index
+        self._index      = monitor_index
+        self._wmi_conn   = None        # cached WMI connection (worker thread only)
+
+    def _get_wmi(self):
+        """Return (and cache) the WMI connection for the ``wmi`` namespace."""
+        if self._wmi_conn is None:
+            import wmi as _wmi
+            self._wmi_conn = _wmi.WMI(namespace="wmi")
+        return self._wmi_conn
+
+    def _reset_wmi(self) -> None:
+        self._wmi_conn = None
+
+    @Slot()
+    def read_initial(self) -> None:
+        try:
+            c         = self._get_wmi()
+            instances = c.WmiMonitorBrightness()
+            if self._wmi_index < len(instances):
+                b = int(instances[self._wmi_index].CurrentBrightness)
+                self.read_done.emit(b, 50)
+                return
+        except Exception as e:
+            log.debug("WMI read failed on monitor %d: %s", self._index, e)
+            self._reset_wmi()
+        self.read_failed.emit()
+
+    @Slot(object, object)
+    def apply_bri_con(self, bri, con) -> None:
+        if bri is None:
+            return
+        try:
+            c       = self._get_wmi()
+            methods = c.WmiMonitorBrightnessMethods()
+            if self._wmi_index < len(methods):
+                methods[self._wmi_index].WmiSetBrightness(Brightness=int(bri), Timeout=0)
+        except Exception as e:
+            log.debug("WMI brightness write failed on monitor %d: %s", self._index, e)
+            self._reset_wmi()   # discard stale connection; rebuilt on next call
+
+    # Stubs — WMI does not support these operations
+    @Slot(object, object, object)
+    def apply_rgb(self, r, g, b) -> None:
+        pass
+
+    @Slot(int)
+    def apply_power(self, state: int) -> None:
+        pass
+
+    @Slot(object)
+    def apply_rgb_dict(self, rgb: dict) -> None:
+        pass
+
+    @Slot()
+    def read_rgb(self) -> None:
+        self.rgb_read_done.emit(None)
+
+
 # ── MonitorCard ───────────────────────────────────────────────────────────────
 
 class MonitorCard(QFrame):
@@ -155,10 +236,18 @@ class MonitorCard(QFrame):
         self.available: bool = True   # False when DDC-CI handle is absent or read fails
         self._rgb_reading: bool = False  # re-entrance guard for read_rgb()
 
+        # Custom per-channel LUTs (256 × 0-65535) set from the Curves tab.
+        # None = no custom curves; gamma + warmth use the simple power-law ramp.
+        # When set, gamma and warmth are composed ON TOP of these LUTs.
+        self._custom_luts: tuple[list[int], list[int], list[int]] | None = None
+
         self._build_ui()
 
-        if self.monitor is not None:
+        backend = descriptor.brightness_backend
+        if backend == "ddc":
             self._start_worker()
+        elif backend == "wmi":
+            self._start_wmi_worker(descriptor.wmi_index or 0)
         else:
             self._mark_unavailable()
 
@@ -188,11 +277,38 @@ class MonitorCard(QFrame):
         # Trigger the initial brightness/contrast read
         QTimer.singleShot(100, self._sig_read.emit)
 
+    def _start_wmi_worker(self, wmi_index: int) -> None:
+        self._thread = QThread()
+        self._worker = _WMIWorker(wmi_index, self.index)
+        self._worker.moveToThread(self._thread)
+
+        self._sig_read.connect(self._worker.read_initial)
+        self._sig_bri_con.connect(self._worker.apply_bri_con)
+        self._sig_rgb.connect(self._worker.apply_rgb)
+        self._sig_power.connect(self._worker.apply_power)
+        self._sig_rgb_dict.connect(self._worker.apply_rgb_dict)
+        self._sig_read_rgb.connect(self._worker.read_rgb)
+
+        self._worker.read_done.connect(self._on_initial_values)
+        self._worker.read_failed.connect(self._mark_unavailable)
+        self._worker.write_failed.connect(self._on_write_failed)
+
+        self._thread.finished.connect(self._worker.deleteLater)
+        self._thread.start()
+
+        # Disable contrast — WMI only controls brightness
+        self.sl_con.setEnabled(False)
+        self.sl_con.setToolTip(_("Le contraste n'est pas accessible via WMI (écran intégré)."))
+        # _btn_set remains enabled: the Courbes tab works on all monitors via GDI32
+        self.btn_pow.setEnabled(False)    # no DDC power command
+
+        QTimer.singleShot(100, self._sig_read.emit)
+
     def cleanup(self) -> None:
-        """Stop the DDC worker thread gracefully (call before deleteLater)."""
+        """Stop the worker thread gracefully (call before deleteLater)."""
         if self._thread and self._thread.isRunning():
             self._thread.quit()
-            self._thread.wait(600)   # up to 600 ms for any in-flight DDC op
+            self._thread.wait(600)   # up to 600 ms for any in-flight op
 
     # ── UI construction ───────────────────────────────────────────────────────
 
@@ -281,10 +397,132 @@ class MonitorCard(QFrame):
 
         layout.addWidget(self._body)
 
+        # ── HDR controls (shown only when monitor supports HDR) ───────────────
+        self._hdr_frame = self._build_hdr_frame()
+        self._hdr_frame.setVisible(False)
+        layout.addWidget(self._hdr_frame)
+
         # ── N/A help block (shown when DDC-CI unavailable) ────────────────────
         self._na_frame = self._build_na_frame()
         self._na_frame.setVisible(False)
         layout.addWidget(self._na_frame)
+
+    def _build_hdr_frame(self) -> QFrame:
+        """Control block for HDR-capable monitors (toggle + SDR white level + Auto HDR)."""
+        frame = QFrame()
+        frame.setObjectName("HDRFrame")
+        fl = QVBoxLayout(frame)
+        fl.setContentsMargins(0, 4, 0, 0)
+        fl.setSpacing(6)
+
+        # ── HDR on/off toggle row ─────────────────────────────────────────────
+        row_hdr = QHBoxLayout()
+        row_hdr.setSpacing(8)
+        lbl_hdr = QLabel("HDR")
+        lbl_hdr.setObjectName("Subtle")
+        lbl_hdr.setFixedWidth(56)
+        self._btn_hdr = QPushButton(_("Désactivé"))
+        self._btn_hdr.setObjectName("FocusToggle")
+        self._btn_hdr.setCheckable(True)
+        self._btn_hdr.setFixedWidth(90)
+        self._btn_hdr.toggled.connect(self._on_hdr_toggled)
+        row_hdr.addWidget(lbl_hdr)
+        row_hdr.addWidget(self._btn_hdr)
+        row_hdr.addStretch()
+        fl.addLayout(row_hdr)
+
+        # ── SDR white level slider (visible when HDR active) ──────────────────
+        self._sdr_row = QWidget()
+        sdr_l = QHBoxLayout(self._sdr_row)
+        sdr_l.setContentsMargins(0, 0, 0, 0)
+        sdr_l.setSpacing(8)
+        lbl_sdr = QLabel(_("☀  SDR"))
+        lbl_sdr.setObjectName("Subtle")
+        lbl_sdr.setFixedWidth(56)
+        lbl_sdr.setToolTip(_("Luminosité du contenu SDR en mode HDR (80–500 nits)."))
+        self.sl_sdr = QSlider(Qt.Horizontal)
+        self.sl_sdr.setRange(0, 100)
+        self.sl_sdr.setValue(50)
+        self.sl_sdr.valueChanged.connect(self._on_sdr_label)
+        self.sl_sdr.sliderReleased.connect(self._apply_sdr_white_level)
+        self.lbl_sdr = QLabel("50%")
+        self.lbl_sdr.setObjectName("ValueBadge")
+        self.lbl_sdr.setFixedWidth(34)
+        self.lbl_sdr.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        sdr_l.addWidget(lbl_sdr)
+        sdr_l.addWidget(self.sl_sdr)
+        sdr_l.addWidget(self.lbl_sdr)
+        self._sdr_row.setVisible(False)
+        fl.addWidget(self._sdr_row)
+
+        # ── Auto HDR toggle (Windows 11 22H2+, hidden if unsupported) ─────────
+        self._auto_hdr_row = QWidget()
+        auto_l = QHBoxLayout(self._auto_hdr_row)
+        auto_l.setContentsMargins(0, 0, 0, 0)
+        auto_l.setSpacing(8)
+        lbl_auto = QLabel(_("Auto HDR"))
+        lbl_auto.setObjectName("Subtle")
+        lbl_auto.setFixedWidth(56)
+        self._btn_auto_hdr = QPushButton(_("Désactivé"))
+        self._btn_auto_hdr.setObjectName("FocusToggle")
+        self._btn_auto_hdr.setCheckable(True)
+        self._btn_auto_hdr.setFixedWidth(90)
+        self._btn_auto_hdr.toggled.connect(self._on_auto_hdr_toggled)
+        auto_l.addWidget(lbl_auto)
+        auto_l.addWidget(self._btn_auto_hdr)
+        auto_l.addStretch()
+        self._auto_hdr_row.setVisible(False)
+        fl.addWidget(self._auto_hdr_row)
+
+        return frame
+
+    def refresh_hdr(self) -> None:
+        """Refresh HDR state from the OS and update controls. Call from poll timer."""
+        from lumina_control.hdr import get_hdr_info
+        info = get_hdr_info(self.device_name)
+        if info is None or not info.hdr_supported:
+            self._hdr_frame.setVisible(False)
+            return
+
+        self._hdr_frame.setVisible(True)
+
+        # HDR toggle — block signals to avoid feedback loop
+        self._btn_hdr.blockSignals(True)
+        self._btn_hdr.setChecked(info.hdr_enabled)
+        self._btn_hdr.setText(_("Activé") if info.hdr_enabled else _("Désactivé"))
+        self._btn_hdr.blockSignals(False)
+
+        # SDR white level slider
+        self._sdr_row.setVisible(info.hdr_enabled)
+        if info.hdr_enabled:
+            self.sl_sdr.blockSignals(True)
+            self.sl_sdr.setValue(info.sdr_white_level_pct)
+            self.sl_sdr.blockSignals(False)
+            self.lbl_sdr.setText(f"{info.sdr_white_level_pct}%")
+
+        # Auto HDR (only show if supported)
+        self._auto_hdr_row.setVisible(info.auto_hdr_supported)
+        if info.auto_hdr_supported:
+            self._btn_auto_hdr.blockSignals(True)
+            self._btn_auto_hdr.setChecked(info.auto_hdr_enabled)
+            self._btn_auto_hdr.setText(
+                _("Activé") if info.auto_hdr_enabled else _("Désactivé"))
+            self._btn_auto_hdr.blockSignals(False)
+
+    def _on_hdr_toggled(self, checked: bool) -> None:
+        self._btn_hdr.setText(_("Activé") if checked else _("Désactivé"))
+        self._sdr_row.setVisible(checked)
+        set_hdr(self.device_name, checked)
+
+    def _on_sdr_label(self, v: int) -> None:
+        self.lbl_sdr.setText(f"{v}%")
+
+    def _apply_sdr_white_level(self) -> None:
+        set_sdr_white_level(self.device_name, self.sl_sdr.value())
+
+    def _on_auto_hdr_toggled(self, checked: bool) -> None:
+        self._btn_auto_hdr.setText(_("Activé") if checked else _("Désactivé"))
+        set_auto_hdr(self.device_name, checked)
 
     def _build_na_frame(self) -> QFrame:
         """Help block shown when DDC-CI is unavailable for this monitor."""
@@ -299,7 +537,7 @@ class MonitorCard(QFrame):
         fl.addWidget(title)
 
         hint = QLabel(_(
-            "Les écrans intégrés (laptop) ne supportent pas DDC-CI. "
+            "Ni DDC-CI ni WMI ne sont disponibles pour cet écran. "
             "Pour un écran externe : activez « DDC/CI » dans le menu OSD (boutons physiques) puis cliquez ↻.\n"
             "Le slider γ Gamma reste disponible sur tous les écrans."
         ))
@@ -349,7 +587,7 @@ class MonitorCard(QFrame):
     def _mark_unavailable(self) -> None:
         self.available = False
         self.lbl_name.setText(_("Écran {}  (N/A)").format(self.index + 1))
-        self._btn_set.setEnabled(False)
+        # _btn_set stays enabled — the Courbes tab (GDI32) works on all monitors
         self.btn_pow.setEnabled(False)
         self._body.setVisible(False)
         self._na_frame.setVisible(True)
@@ -401,14 +639,30 @@ class MonitorCard(QFrame):
         if not suspended:
             self._apply_changes()
 
-    # ── Gamma (GPU / GDI32 — runs on main thread, fast) ──────────────────────
+    # ── Gamma + warmth (GPU / GDI32 — runs on main thread, fast) ────────────
 
     def _on_gamma_label(self, v: int) -> None:
         self.gamma_value = v / 100.0
         self.lbl_gamma.setText(f"{self.gamma_value:.2f}")
 
     def _apply_gamma(self) -> None:
-        set_device_gamma(self.device_name, self.gamma_value, self.current_warmth)
+        self._apply_ramp()
+
+    def _apply_ramp(self) -> None:
+        """Apply GDI32 ramp: custom curves composed with current gamma + warmth.
+
+        When no custom curves are stored, falls back to the simple power-law
+        ramp (identical to the pre-curves behaviour).
+        """
+        if self._custom_luts is not None:
+            from lumina_control.curve_editor import compose_ramp, set_device_gamma_ramp
+            r, g, b = compose_ramp(
+                self._custom_luts[0], self._custom_luts[1], self._custom_luts[2],
+                self.gamma_value, self.current_warmth,
+            )
+            set_device_gamma_ramp(self.device_name, r, g, b)
+        else:
+            set_device_gamma(self.device_name, self.gamma_value, self.current_warmth)
 
     def set_gamma_value(self, gamma: float) -> None:
         """Set gamma on this monitor: update slider, label and apply via GDI32."""
@@ -417,12 +671,12 @@ class MonitorCard(QFrame):
         self.sl_gamma.setValue(int(round(self.gamma_value * 100)))
         self.sl_gamma.blockSignals(False)
         self.lbl_gamma.setText(f"{self.gamma_value:.2f}")
-        set_device_gamma(self.device_name, self.gamma_value, self.current_warmth)
+        self._apply_ramp()
 
     def set_warmth(self, warmth: float) -> None:
         """Apply warm tint to this monitor (0.0 = neutral, 1.0 = max warm)."""
         self.current_warmth = warmth
-        set_device_gamma(self.device_name, self.gamma_value, warmth)
+        self._apply_ramp()
 
     # ── RGB gains (dispatched to worker thread) ───────────────────────────────
 
@@ -485,12 +739,19 @@ class MonitorCard(QFrame):
 
     # ── Calibration dialog ────────────────────────────────────────────────────
 
+    def _on_curves_applied(self, r_lut: list[int], g_lut: list[int],
+                           b_lut: list[int]) -> None:
+        """Receive LUTs from CalibrationDialog and compose with gamma + warmth."""
+        self._custom_luts = (r_lut, g_lut, b_lut)
+        self._apply_ramp()
+
     def _open_calibration(self) -> None:
         dlg = CalibrationDialog(
             self.monitor,
             self.descriptor.label,
             self.device_name,
             sync_rgb_callback=self.sync_rgb_hook,
+            curves_applied_callback=self._on_curves_applied,
             parent=self.window(),
         )
         dlg.exec()
