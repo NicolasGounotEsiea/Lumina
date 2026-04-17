@@ -36,6 +36,7 @@ DEFAULT_SETTINGS: dict = {
     "circadian_city":    "Paris",           # display label only
     "circadian_warmth_enabled": False,
     "circadian_warmth_max": 60,
+    "curve_points": {},              # {device_name: {R/G/B: [[x,y],…]}}
 }
 
 

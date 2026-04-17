@@ -240,6 +240,12 @@ class MonitorCard(QFrame):
         # None = no custom curves; gamma + warmth use the simple power-law ramp.
         # When set, gamma and warmth are composed ON TOP of these LUTs.
         self._custom_luts: tuple[list[int], list[int], list[int]] | None = None
+        # Control points that produced _custom_luts — persisted to settings.json.
+        self._custom_curve_points: dict | None = None
+        # Called (no args) after curves change so MainWindow can save settings.
+        self._save_hook = None
+        self._ramp_fail_count: int = 0
+        self._ramp_unsupported: bool = False
 
         self._build_ui()
 
@@ -337,8 +343,13 @@ class MonitorCard(QFrame):
         self.btn_pow.clicked.connect(self.toggle_power)
         self.btn_pow.setProperty("active", "true")
 
+        self._lbl_hdr_badge = QLabel("HDR")
+        self._lbl_hdr_badge.setObjectName("HDRBadge")
+        self._lbl_hdr_badge.setVisible(False)
+
         h.addWidget(self.lbl_name)
         h.addStretch()
+        h.addWidget(self._lbl_hdr_badge)
         h.addWidget(self._btn_set)
         h.addWidget(self.btn_pow)
         layout.addLayout(h)
@@ -482,9 +493,23 @@ class MonitorCard(QFrame):
         info = get_hdr_info(self.device_name)
         if info is None or not info.hdr_supported:
             self._hdr_frame.setVisible(False)
+            self._lbl_hdr_badge.setVisible(False)
             return
 
         self._hdr_frame.setVisible(True)
+        self._lbl_hdr_badge.setVisible(True)
+        if info.hdr_enabled:
+            self._lbl_hdr_badge.setStyleSheet(
+                "color:#ffaa00;font-weight:bold;font-size:10px;"
+                "background:rgba(255,170,0,18);border:1px solid rgba(255,170,0,80);"
+                "border-radius:3px;padding:1px 4px;"
+            )
+        else:
+            self._lbl_hdr_badge.setStyleSheet(
+                "color:#888;font-weight:bold;font-size:10px;"
+                "background:rgba(128,128,128,12);border:1px solid rgba(128,128,128,40);"
+                "border-radius:3px;padding:1px 4px;"
+            )
 
         # HDR toggle — block signals to avoid feedback loop
         self._btn_hdr.blockSignals(True)
@@ -651,18 +676,32 @@ class MonitorCard(QFrame):
     def _apply_ramp(self) -> None:
         """Apply GDI32 ramp: custom curves composed with current gamma + warmth.
 
-        When no custom curves are stored, falls back to the simple power-law
-        ramp (identical to the pre-curves behaviour).
+        Falls back to plain gamma when no custom curves are set, or when the
+        driver doesn't support arbitrary ramps.  _ramp_unsupported is set after
+        3 consecutive background failures but reset whenever the user explicitly
+        applies curves, so curves are retried after each intentional action.
         """
-        if self._custom_luts is not None:
+        if self._custom_luts is not None and not self._ramp_unsupported:
             from lumina_control.curve_editor import compose_ramp, set_device_gamma_ramp
             r, g, b = compose_ramp(
                 self._custom_luts[0], self._custom_luts[1], self._custom_luts[2],
                 self.gamma_value, self.current_warmth,
             )
-            set_device_gamma_ramp(self.device_name, r, g, b)
-        else:
-            set_device_gamma(self.device_name, self.gamma_value, self.current_warmth)
+            if set_device_gamma_ramp(self.device_name, r, g, b):
+                self._ramp_fail_count = 0
+                return
+            self._ramp_fail_count += 1
+            if self._ramp_fail_count >= 3:
+                log.warning(
+                    "SetDeviceGammaRamp non supporté sur %s — courbes sauvegardées "
+                    "mais non appliquées à l'affichage.",
+                    self.device_name,
+                )
+                self._ramp_unsupported = True
+                self._ramp_fail_count = 0
+            else:
+                return  # Échec transitoire — préserver le ramp existant.
+        set_device_gamma(self.device_name, self.gamma_value, self.current_warmth)
 
     def set_gamma_value(self, gamma: float) -> None:
         """Set gamma on this monitor: update slider, label and apply via GDI32."""
@@ -739,11 +778,39 @@ class MonitorCard(QFrame):
 
     # ── Calibration dialog ────────────────────────────────────────────────────
 
+    @staticmethod
+    def _is_identity_curves(curve_points: dict) -> bool:
+        """Return True if all channels are the default two-point identity curve."""
+        for pts in curve_points.values():
+            if len(pts) != 2:
+                return False
+            x0, y0 = pts[0][0], pts[0][1]
+            x1, y1 = pts[1][0], pts[1][1]
+            if not (abs(x0) < 1e-9 and abs(y0) < 1e-9
+                    and abs(x1 - 1.0) < 1e-9 and abs(y1 - 1.0) < 1e-9):
+                return False
+        return True
+
     def _on_curves_applied(self, r_lut: list[int], g_lut: list[int],
-                           b_lut: list[int]) -> None:
+                           b_lut: list[int], curve_points: dict | None = None) -> None:
         """Receive LUTs from CalibrationDialog and compose with gamma + warmth."""
-        self._custom_luts = (r_lut, g_lut, b_lut)
+        # Each explicit user apply resets failure state so the driver gets fresh tries.
+        self._ramp_fail_count = 0
+        self._ramp_unsupported = False
+        # If every channel is identity, treat as "no custom curves" so that the
+        # normal gamma path stays active (avoids set_device_gamma_ramp failing
+        # silently on drivers/monitors that reject arbitrary ramps).
+        if curve_points is not None and self._is_identity_curves(curve_points):
+            self._custom_luts = None
+            self._custom_curve_points = None
+        else:
+            self._custom_luts = (r_lut, g_lut, b_lut)
+            if curve_points is not None:
+                self._custom_curve_points = curve_points
         self._apply_ramp()
+        # Persist immediately so a crash doesn't lose the user's work.
+        if self._save_hook is not None:
+            QTimer.singleShot(300, self._save_hook)
 
     def _open_calibration(self) -> None:
         dlg = CalibrationDialog(
@@ -752,6 +819,7 @@ class MonitorCard(QFrame):
             self.device_name,
             sync_rgb_callback=self.sync_rgb_hook,
             curves_applied_callback=self._on_curves_applied,
+            initial_curves=self._custom_curve_points,
             parent=self.window(),
         )
         dlg.exec()

@@ -164,6 +164,17 @@ class _CurveWidget(QWidget):
         p.drawText(pad + w - fm.horizontalAdvance(lbl) - 4,
                    pad + fm.ascent() + 2, lbl)
 
+        # ── Hint text (shown only on default identity curve) ──────────────────
+        if len(self._curves[self._active]) == 2:
+            font_hint = QFont("Segoe UI", 8)
+            p.setFont(font_hint)
+            p.setPen(QColor(255, 255, 255, 38))
+            hint = "Clic gauche : ajouter un point"
+            fm2  = p.fontMetrics()
+            hx   = (self.width() - fm2.horizontalAdvance(hint)) // 2
+            hy   = self.height() // 2 + fm2.ascent() // 2
+            p.drawText(hx, hy, hint)
+
         # ── Widget border (rounded, very subtle) ──────────────────────────────
         p.setBrush(Qt.NoBrush)
         p.setPen(QPen(QColor(255, 255, 255, 20), 1))
@@ -223,11 +234,13 @@ class _CurveWidget(QWidget):
         x, y = self._to_norm(event.x(), event.y())
         idx  = self._drag_idx
 
-        # Endpoints are locked to x=0 or x=1
+        # Endpoints: x locked to 0/1, y locked to 0/1 (required for valid GPU ramp)
         if idx == 0:
             x = 0.0
+            y = 0.0
         elif idx == len(pts) - 1:
             x = 1.0
+            y = 1.0
         else:
             x = max(pts[idx - 1][0] + 0.01, min(pts[idx + 1][0] - 0.01, x))
 
@@ -253,12 +266,13 @@ class CalibrationDialog(QDialog):
 
     def __init__(self, monitor_handle, monitor_name: str, device_name: str,
                  sync_rgb_callback=None, curves_applied_callback=None,
-                 parent=None) -> None:
+                 initial_curves=None, parent=None) -> None:
         super().__init__(parent)
         self.monitor                  = monitor_handle
         self.device_name              = device_name
         self.sync_rgb_callback        = sync_rgb_callback
         self._curves_applied_callback = curves_applied_callback
+        self._initial_curves          = initial_curves
         self.sync_rgb          = True
         self._syncing          = False
         self._sliders:  dict[int, QSlider] = {}
@@ -267,7 +281,7 @@ class CalibrationDialog(QDialog):
         self._ch_btns:  dict[str, QPushButton] = {}
 
         self.setWindowTitle(_("Calibrage : {}").format(monitor_name))
-        self.setFixedSize(374, 460)
+        self.setFixedSize(374, 510)
         self.setWindowFlags(Qt.Dialog | Qt.WindowCloseButtonHint)
 
         root = QVBoxLayout(self)
@@ -386,8 +400,33 @@ class CalibrationDialog(QDialog):
         self._ch_btns["R"].setChecked(True)
         self._update_ch_btn_styles("R")
 
+        # Preset buttons
+        preset_row = QHBoxLayout()
+        lbl_pre = QLabel(_("Présets :"))
+        lbl_pre.setObjectName("Subtle")
+        preset_row.addWidget(lbl_pre)
+        _PRESETS = {
+            "S-Curve": [(0.0, 0.0), (0.25, 0.18), (0.75, 0.82), (1.0, 1.0)],
+            "Film":    [(0.0, 0.0), (0.1, 0.12), (0.5, 0.52), (0.9, 0.88), (1.0, 1.0)],
+            "γ 2.2":   [(0.0, 0.0), (0.25, 0.53), (0.5, 0.73), (0.75, 0.88), (1.0, 1.0)],
+        }
+        for name, pts in _PRESETS.items():
+            btn_pre = QPushButton(name)
+            btn_pre.setProperty("class", "pill-muted")
+            btn_pre.setFixedHeight(24)
+            btn_pre.clicked.connect(partial(self._apply_preset, pts))
+            preset_row.addWidget(btn_pre)
+        preset_row.addStretch()
+        layout.addLayout(preset_row)
+
         # Curve editor widget
         self._curve_widget = _CurveWidget()
+        # Restore saved control points if provided
+        if self._initial_curves:
+            for ch, saved_pts in self._initial_curves.items():
+                if ch in ("R", "G", "B"):
+                    self._curve_widget._curves[ch] = [tuple(p) for p in saved_pts]
+            self._curve_widget.update()
         layout.addWidget(self._curve_widget, alignment=Qt.AlignCenter)
 
         # Reset / Apply row
@@ -456,16 +495,29 @@ class CalibrationDialog(QDialog):
 
     # ── Curves actions ────────────────────────────────────────────────────────
 
+    def _apply_preset(self, pts: list) -> None:
+        """Apply a preset to all three channels and immediately apply to the GPU."""
+        for ch in ("R", "G", "B"):
+            self._curve_widget._curves[ch] = list(pts)
+        self._curve_widget.update()
+        self._curve_widget.curve_changed.emit()
+        self._apply_curves()
+
     def _reset_curve(self) -> None:
-        self._curve_widget.reset_channel()
+        """Reset all channels to identity and clear the applied curves."""
+        for ch in ("R", "G", "B"):
+            self._curve_widget.reset_channel(ch)
+        self._apply_curves()
 
     def _apply_curves(self) -> None:
-        r = self._curve_widget.get_lut("R")
-        g = self._curve_widget.get_lut("G")
-        b = self._curve_widget.get_lut("B")
+        r   = self._curve_widget.get_lut("R")
+        g   = self._curve_widget.get_lut("G")
+        b   = self._curve_widget.get_lut("B")
+        pts = {ch: [list(p) for p in self._curve_widget._curves[ch]]
+               for ch in ("R", "G", "B")}
         if self._curves_applied_callback is not None:
             # Let MonitorCard compose curves with current gamma + warmth
-            self._curves_applied_callback(r, g, b)
+            self._curves_applied_callback(r, g, b, pts)
         else:
             # Fallback: apply directly (no gamma/warmth composition)
             from lumina_control.curve_editor import set_device_gamma_ramp

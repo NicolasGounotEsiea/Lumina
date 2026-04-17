@@ -323,6 +323,7 @@ class MainWindow(QWidget):
         self.sync_offset_con       = s["sync_offset_con"]
         self.gamma_value           = s["gamma_value"]
         self.gamma_values:  dict   = s["gamma_values"]
+        self.curve_points:  dict   = s["curve_points"]
         self.focus_enabled         = s["focus_enabled"]
         self.focus_dim             = s["focus_dim"]
         self.night_mode_enabled    = s["night_mode_enabled"]
@@ -1655,6 +1656,13 @@ class MainWindow(QWidget):
             "sync_offset_con":       self.sync_offset_con,
             "gamma_value":           self.gamma_value,
             "gamma_values":          {c.device_name: c.gamma_value for c in self.cards},
+            "curve_points":          {
+                c.device_name: {
+                    ch: [list(p) for p in pts]
+                    for ch, pts in c._custom_curve_points.items()
+                }
+                for c in self.cards if c._custom_curve_points is not None
+            },
             "focus_enabled":         self.focus_enabled,
             "focus_dim":             self.focus_dim,
             "app_rules_enabled":     self._rules_engine.enabled,
@@ -1697,6 +1705,7 @@ class MainWindow(QWidget):
                     sync_hook=self._on_monitor_changed,
                     sync_rgb_hook=self._on_rgb_changed,
                 )
+                card._save_hook = self.save_settings
                 self.mon_l.addWidget(card)
                 self.cards.append(card)
         except Exception as e:
@@ -1709,6 +1718,21 @@ class MainWindow(QWidget):
             c.current_warmth = warmth
             if c.device_name in self.gamma_values:
                 c.set_gamma_value(float(self.gamma_values[c.device_name]))
+
+        # Restore saved tone curves (control points → LUTs → GDI32 ramp)
+        for c in self.cards:
+            dev_pts = self.curve_points.get(c.device_name)
+            if dev_pts:
+                from lumina_control.curve_editor import monotone_lut
+                r_lut = monotone_lut(dev_pts.get("R", [(0.0, 0.0), (1.0, 1.0)]))
+                g_lut = monotone_lut(dev_pts.get("G", [(0.0, 0.0), (1.0, 1.0)]))
+                b_lut = monotone_lut(dev_pts.get("B", [(0.0, 0.0), (1.0, 1.0)]))
+                c._custom_luts = (r_lut, g_lut, b_lut)
+                c._custom_curve_points = {
+                    ch: [tuple(p) for p in pts]
+                    for ch, pts in dev_pts.items()
+                }
+                c._apply_ramp()
 
         # DDC-CI banner: show when at least one monitor has no DDC handle
         na_count = sum(1 for c in self.cards if not c.available)

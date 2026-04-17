@@ -130,6 +130,10 @@ def set_device_gamma_ramp(device_name: str,
             ramp[i]         = min(65535, max(0, int(r_lut[i])))
             ramp[256 + i]   = min(65535, max(0, int(g_lut[i])))
             ramp[512 + i]   = min(65535, max(0, int(b_lut[i])))
+        # Most drivers require ramp[0]=0 (no light at minimum input).
+        # Do NOT force ramp[255]=65535 — with warmth the blue endpoint is
+        # intentionally lower, and a forced jump would cause API failures.
+        ramp[0] = ramp[256] = ramp[512] = 0
         ok = bool(ctypes.windll.gdi32.SetDeviceGammaRamp(hdc, ctypes.byref(ramp)))
         ctypes.windll.gdi32.DeleteDC(hdc)
         return ok
