@@ -274,24 +274,31 @@ def build_icc_bytes(r_lut: list[int], g_lut: list[int], b_lut: list[int]) -> byt
 
 def compose_ramp(r_lut: list[int], g_lut: list[int], b_lut: list[int],
                  gamma: float = 1.0, warmth: float = 0.0,
+                 contrast: float = 0.5,
+                 r_gain: float = 1.0, g_gain: float = 1.0, b_gain: float = 1.0,
                  ) -> tuple[list[int], list[int], list[int]]:
-    """Apply *gamma* and *warmth* on top of existing per-channel LUTs.
+    """Apply *gamma*, *warmth*, *contrast* and per-channel gains on top of LUTs.
 
-    This lets the gamma slider and Night Mode warm-tint compose with custom
-    curves rather than overwriting them.
+    *gamma*    — 1.0 = neutral, > 1.0 = brighter mid-tones.
+    *warmth*   — 0.0 = neutral, 1.0 = max warm (+5 % R, −70 % B).
+    *contrast* — 0.5 = identity, 0.0 = flat grey, 1.0 = max contrast.
+                 Applied as linear stretch around 0.5:
+                 y = clamp(0.5 + (x − 0.5) × factor, 0, 1)  where factor = contrast × 2.
+    *r/g/b_gain* — 1.0 = identity, 0.0 = black. Applied after gamma.
 
-    *gamma*   — same semantics as ``_build_combined_ramp``: 1.0 = neutral,
-                > 1.0 = brighter mid-tones, < 1.0 = darker.
-    *warmth*  — 0.0 = neutral, 1.0 = maximum warm (+5 % R, −70 % B).
-
-    With *gamma*=1.0 and *warmth*=0.0 the output is identical to the input.
-    With identity LUTs the output is identical to ``_build_combined_ramp``.
+    With all params at their defaults the output is identical to the input.
     """
-    gamma   = max(0.5, min(3.0, float(gamma)))
-    warmth  = max(0.0, min(1.0, float(warmth)))
-    r_mult  = 1.0 + warmth * 0.05
-    g_mult  = 1.0 - warmth * 0.05
-    b_mult  = 1.0 - warmth * 0.70
+    gamma    = max(0.5, min(3.0, float(gamma)))
+    warmth   = max(0.0, min(1.0, float(warmth)))
+    contrast = max(0.0, min(1.0, float(contrast)))
+    r_gain   = max(0.0, min(2.0, float(r_gain)))
+    g_gain   = max(0.0, min(2.0, float(g_gain)))
+    b_gain   = max(0.0, min(2.0, float(b_gain)))
+
+    c_factor = contrast * 2.0          # 0.5 → factor=1.0 (identity)
+    r_mult   = r_gain * (1.0 + warmth * 0.05)
+    g_mult   = g_gain * (1.0 - warmth * 0.05)
+    b_mult   = b_gain * (1.0 - warmth * 0.70)
 
     out_r: list[int] = []
     out_g: list[int] = []
@@ -300,6 +307,10 @@ def compose_ramp(r_lut: list[int], g_lut: list[int], b_lut: list[int],
         cr = r_lut[i] / 65535.0
         cg = g_lut[i] / 65535.0
         cb = b_lut[i] / 65535.0
+        if contrast != 0.5:
+            cr = max(0.0, min(1.0, 0.5 + (cr - 0.5) * c_factor))
+            cg = max(0.0, min(1.0, 0.5 + (cg - 0.5) * c_factor))
+            cb = max(0.0, min(1.0, 0.5 + (cb - 0.5) * c_factor))
         if gamma != 1.0:
             cr = pow(cr, 1.0 / gamma) if cr > 0.0 else 0.0
             cg = pow(cg, 1.0 / gamma) if cg > 0.0 else 0.0

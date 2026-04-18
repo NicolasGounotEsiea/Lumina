@@ -391,13 +391,16 @@ class CalibrationDialog(QDialog):
 
     def __init__(self, monitor_handle, monitor_name: str, device_name: str,
                  sync_rgb_callback=None, curves_applied_callback=None,
-                 initial_curves=None, parent=None) -> None:
+                 initial_curves=None, sw_rgb_callback=None,
+                 initial_sw_rgb=None, parent=None) -> None:
         super().__init__(parent)
         self.monitor                  = monitor_handle
         self.device_name              = device_name
         self.sync_rgb_callback        = sync_rgb_callback
         self._curves_applied_callback = curves_applied_callback
         self._initial_curves          = initial_curves
+        self._sw_rgb_callback         = sw_rgb_callback   # callable(r, g, b: float) or None
+        self._initial_sw_rgb          = initial_sw_rgb    # {vcp_code: int 0-100} or None
         self.sync_rgb          = True
         self._syncing          = False
         self._sliders:  dict[int, QSlider] = {}
@@ -418,10 +421,13 @@ class CalibrationDialog(QDialog):
         self._tabs.addTab(self._build_rgb_tab(),    _("Gains RGB"))
         self._tabs.addTab(self._build_curves_tab(), _("Courbes"))
 
-        # If no DDC-CI handle, curves-only mode
+        # No DDC handle: enable RGB tab only when sw callback available, else curves-only
         if self.monitor is None:
-            self._tabs.setTabEnabled(0, False)
-            self._tabs.setCurrentIndex(1)
+            if self._sw_rgb_callback is not None:
+                self._tabs.setCurrentIndex(0)
+            else:
+                self._tabs.setTabEnabled(0, False)
+                self._tabs.setCurrentIndex(1)
 
         root.addWidget(self._tabs)
 
@@ -442,22 +448,28 @@ class CalibrationDialog(QDialog):
         layout.setSpacing(12)
         layout.setContentsMargins(8, 10, 8, 8)
 
-        info = QLabel(_("Ajustement fin des gains RGB (si supporté par l'écran)."))
+        sw_mode = self._sw_rgb_callback is not None and self.monitor is None
+        if sw_mode:
+            info_text = _("Gains RGB simulés via GPU (GDI32). 100 = neutre, 0 = canal éteint.")
+        else:
+            info_text = _("Ajustement fin des gains RGB (si supporté par l'écran).")
+        info = QLabel(info_text)
         info.setWordWrap(True)
         info.setObjectName("Subtle")
         layout.addWidget(info)
 
-        # Link / reload toolbar
+        # Link / reload toolbar (reload hidden in sw mode — no DDC to read)
         tools = QHBoxLayout()
         self.chk_link = QCheckBox(_("Lier R/G/B"))
         self.chk_link.setChecked(True)
         self.chk_link.toggled.connect(lambda v: setattr(self, "sync_rgb", v))
-        btn_reload = QPushButton(_("Recharger"))
-        btn_reload.setProperty("class", "pill-muted")
-        btn_reload.clicked.connect(self._reload_all)
         tools.addWidget(self.chk_link)
         tools.addStretch()
-        tools.addWidget(btn_reload)
+        if not sw_mode:
+            btn_reload = QPushButton(_("Recharger"))
+            btn_reload.setProperty("class", "pill-muted")
+            btn_reload.clicked.connect(self._reload_all)
+            tools.addWidget(btn_reload)
         layout.addLayout(tools)
 
         # R / G / B sliders
@@ -480,7 +492,15 @@ class CalibrationDialog(QDialog):
             layout.addLayout(row)
             self._sliders[code] = sl
             self._labels[code]  = val_lbl
-            QTimer.singleShot(200, partial(self._load_channel, code))
+            if sw_mode:
+                # Initialise from saved sw gains (0-100 scale)
+                init_val = (self._initial_sw_rgb or {}).get(code, 100)
+                sl.blockSignals(True)
+                sl.setValue(init_val)
+                sl.blockSignals(False)
+                val_lbl.setText(str(init_val))
+            else:
+                QTimer.singleShot(200, partial(self._load_channel, code))
 
         # Global gain slider
         gain_row = QHBoxLayout()
@@ -498,6 +518,14 @@ class CalibrationDialog(QDialog):
         gain_row.addWidget(self.sl_gain)
         gain_row.addWidget(self.lbl_gain)
         layout.addLayout(gain_row)
+        if sw_mode:
+            vals = [(self._initial_sw_rgb or {}).get(c, 100)
+                    for _lbl, c, _obj in self._CHANNELS]
+            avg = int(round(sum(vals) / len(vals)))
+            self.sl_gain.blockSignals(True)
+            self.sl_gain.setValue(avg)
+            self.sl_gain.blockSignals(False)
+            self.lbl_gain.setText(str(avg))
 
         layout.addStretch()
         return tab
@@ -744,12 +772,18 @@ class CalibrationDialog(QDialog):
 
     def _on_channel_change(self, code: int, value: int) -> None:
         self._labels[code].setText(str(value))
-        try:
-            with self.monitor:
-                self.monitor.vcp.set_vcp_feature(code, value)
-        except Exception as e:
-            log.debug("Cannot set VCP 0x%02X: %s", code, e)
-        self._emit_rgb_sync()
+        if self._sw_rgb_callback is not None and self.monitor is None:
+            # Software RGB path — call back with 0.0-1.0 gains
+            _code_order = [c for _l, c, _o in self._CHANNELS]
+            gains = [self._sliders[c].value() / 100.0 for c in _code_order]
+            self._sw_rgb_callback(*gains)
+        else:
+            try:
+                with self.monitor:
+                    self.monitor.vcp.set_vcp_feature(code, value)
+            except Exception as e:
+                log.debug("Cannot set VCP 0x%02X: %s", code, e)
+            self._emit_rgb_sync()
         if self.sync_rgb and not self._syncing:
             self._syncing = True
             for c, sl in self._sliders.items():

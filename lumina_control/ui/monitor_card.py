@@ -117,6 +117,51 @@ class _DDCWorker(QObject):
             log.debug("DDC RGB-dict write failed on monitor %d: %s", self._index, e)
 
 
+# ── WMI helpers (wmi package preferred, win32com.client fallback) ─────────────
+
+def _wmi_connect():
+    """Return (conn, via_com: bool).  Tries ``wmi`` package first, then win32com.
+
+    When via_com is True the connection is an SWbemServices object obtained via
+    SWbemLocator.  Method calls must go through ExecMethod_ (direct dispatch
+    fails to coerce Python ints to the correct COM VARIANT types for WMI).
+    """
+    try:
+        import wmi as _wmi
+        return _wmi.WMI(namespace="wmi"), False
+    except ImportError:
+        pass
+    import pythoncom
+    pythoncom.CoInitialize()
+    import win32com.client
+    loc = win32com.client.Dispatch("WbemScripting.SWbemLocator")
+    svc = loc.ConnectServer(".", "root/wmi")
+    return svc, True
+
+
+def _wmi_brightness_instances(conn, via_com: bool) -> list:
+    if via_com:
+        return list(conn.InstancesOf("WmiMonitorBrightness"))
+    return conn.WmiMonitorBrightness()
+
+
+def _wmi_set_brightness(conn, via_com: bool, index: int, brightness: int) -> None:
+    """Write brightness via the appropriate WMI method invocation path."""
+    if via_com:
+        items = list(conn.ExecQuery("SELECT * FROM WmiMonitorBrightnessMethods"))
+        if index >= len(items):
+            return
+        in_p = items[index].Methods_("WmiSetBrightness").InParameters.SpawnInstance_()
+        in_p.Brightness = brightness
+        in_p.Timeout    = 0
+        items[index].ExecMethod_("WmiSetBrightness", in_p)
+    else:
+        methods = conn.WmiMonitorBrightnessMethods()
+        if index >= len(methods):
+            return
+        methods[index].WmiSetBrightness(Brightness=brightness, Timeout=0)
+
+
 # ── WMI brightness worker ────────────────────────────────────────────────────
 
 class _WMIWorker(QObject):
@@ -126,9 +171,9 @@ class _WMIWorker(QObject):
     transparently.  Only brightness is supported — contrast is not exposed
     by WMI and is ignored silently.
 
-    The WMI connection is initialised once in ``read_initial`` and reused for
-    all subsequent ``apply_bri_con`` calls (~100 ms saved per write).  On any
-    error the cached connection is discarded and rebuilt on the next call.
+    Tries the ``wmi`` Python package first; falls back to ``win32com.client``
+    (ships with pywin32) so the feature works without the optional wmi package.
+    The connection is cached per worker thread; reset on any error.
     """
 
     read_done     = Signal(int, int)   # brightness, contrast (contrast always 50)
@@ -140,23 +185,23 @@ class _WMIWorker(QObject):
         super().__init__()
         self._wmi_index  = wmi_index
         self._index      = monitor_index
-        self._wmi_conn   = None        # cached WMI connection (worker thread only)
+        self._wmi_conn   = None
+        self._wmi_via_com: bool = False
 
     def _get_wmi(self):
-        """Return (and cache) the WMI connection for the ``wmi`` namespace."""
         if self._wmi_conn is None:
-            import wmi as _wmi
-            self._wmi_conn = _wmi.WMI(namespace="wmi")
+            self._wmi_conn, self._wmi_via_com = _wmi_connect()
         return self._wmi_conn
 
     def _reset_wmi(self) -> None:
-        self._wmi_conn = None
+        self._wmi_conn    = None
+        self._wmi_via_com = False
 
     @Slot()
     def read_initial(self) -> None:
         try:
             c         = self._get_wmi()
-            instances = c.WmiMonitorBrightness()
+            instances = _wmi_brightness_instances(c, self._wmi_via_com)
             if self._wmi_index < len(instances):
                 b = int(instances[self._wmi_index].CurrentBrightness)
                 self.read_done.emit(b, 50)
@@ -171,13 +216,11 @@ class _WMIWorker(QObject):
         if bri is None:
             return
         try:
-            c       = self._get_wmi()
-            methods = c.WmiMonitorBrightnessMethods()
-            if self._wmi_index < len(methods):
-                methods[self._wmi_index].WmiSetBrightness(Brightness=int(bri), Timeout=0)
+            c = self._get_wmi()
+            _wmi_set_brightness(c, self._wmi_via_com, self._wmi_index, int(bri))
         except Exception as e:
             log.debug("WMI brightness write failed on monitor %d: %s", self._index, e)
-            self._reset_wmi()   # discard stale connection; rebuilt on next call
+            self._reset_wmi()
 
     # Stubs — WMI does not support these operations
     @Slot(object, object, object)
@@ -247,6 +290,14 @@ class MonitorCard(QFrame):
         self._ramp_fail_count: int = 0
         self._ramp_unsupported: bool = False
 
+        # Software contrast + RGB gains (GDI32) for non-DDC monitors.
+        # sw_contrast: 0.5 = identity, 0.0 = flat grey, 1.0 = max contrast.
+        # sw_*_gain:   1.0 = identity, 0.0 = black.
+        self.sw_contrast: float = 0.5
+        self.sw_r_gain: float = 1.0
+        self.sw_g_gain: float = 1.0
+        self.sw_b_gain: float = 1.0
+
         self._build_ui()
 
         backend = descriptor.brightness_backend
@@ -255,7 +306,12 @@ class MonitorCard(QFrame):
         elif backend == "wmi":
             self._start_wmi_worker(descriptor.wmi_index or 0)
         else:
-            self._mark_unavailable()
+            self._mark_sw_only()
+
+    @property
+    def _use_sw_controls(self) -> bool:
+        """True when brightness backend is not DDC-CI (WMI or none)."""
+        return self.descriptor.brightness_backend != "ddc"
 
     # ── Worker thread lifecycle ───────────────────────────────────────────────
 
@@ -296,15 +352,15 @@ class MonitorCard(QFrame):
         self._sig_read_rgb.connect(self._worker.read_rgb)
 
         self._worker.read_done.connect(self._on_initial_values)
-        self._worker.read_failed.connect(self._mark_unavailable)
+        # WMI failure → sw-only (gamma + sw contrast still work via GDI32)
+        self._worker.read_failed.connect(self._mark_sw_only)
         self._worker.write_failed.connect(self._on_write_failed)
 
         self._thread.finished.connect(self._worker.deleteLater)
         self._thread.start()
 
-        # Disable contrast — WMI only controls brightness
-        self.sl_con.setEnabled(False)
-        self.sl_con.setToolTip(_("Le contraste n'est pas accessible via WMI (écran intégré)."))
+        # Contrast routed through GDI32 software simulation for WMI monitors
+        self.sl_con.setToolTip(_("Contraste simulé via GPU (GDI32) — indépendant du DDC-CI. 50 = neutre."))
         # _btn_set remains enabled: the Courbes tab works on all monitors via GDI32
         self.btn_pow.setEnabled(False)    # no DDC power command
 
@@ -562,9 +618,9 @@ class MonitorCard(QFrame):
         fl.addWidget(title)
 
         hint = QLabel(_(
-            "Ni DDC-CI ni WMI ne sont disponibles pour cet écran. "
-            "Pour un écran externe : activez « DDC/CI » dans le menu OSD (boutons physiques) puis cliquez ↻.\n"
-            "Le slider γ Gamma reste disponible sur tous les écrans."
+            "DDC-CI inaccessible — activez « DDC/CI » dans le menu OSD du moniteur (boutons physiques) "
+            "puis relancez l'application.\n"
+            "Le slider γ Gamma et le contraste GPU restent disponibles ci-dessus."
         ))
         hint.setObjectName("NAHint")
         hint.setWordWrap(True)
@@ -610,12 +666,28 @@ class MonitorCard(QFrame):
 
     @Slot()
     def _mark_unavailable(self) -> None:
+        """DDC-CI connection failed. Disable DDC controls; gamma (GDI32) still works."""
         self.available = False
         self.lbl_name.setText(_("Écran {}  (N/A)").format(self.index + 1))
-        # _btn_set stays enabled — the Courbes tab (GDI32) works on all monitors
         self.btn_pow.setEnabled(False)
-        self._body.setVisible(False)
+        self.sl_bri.setEnabled(False)
+        self.sl_con.setEnabled(False)
+        # Body stays visible — gamma slider (GDI32) remains functional
         self._na_frame.setVisible(True)
+
+    @Slot()
+    def _mark_sw_only(self) -> None:
+        """No DDC-CI or WMI brightness. Gamma + sw contrast (GDI32) still work."""
+        self.btn_pow.setEnabled(False)
+        self.sl_bri.setEnabled(False)
+        self.lbl_bri.setText("N/A")
+        self.sl_bri.setToolTip(_("Luminosité non disponible (aucun backend DDC-CI ou WMI)."))
+        # Contrast starts at neutral (50) so sw_contrast is identity by default
+        self.sl_con.blockSignals(True)
+        self.sl_con.setValue(50)
+        self.sl_con.blockSignals(False)
+        self.lbl_con.setText("50")
+        self.sw_contrast = 0.5
 
     # ── DDC-CI write (dispatched to worker thread) ────────────────────────────
 
@@ -626,6 +698,8 @@ class MonitorCard(QFrame):
 
     def _on_contrast_change(self, v: int) -> None:
         self.lbl_con.setText(str(v))
+        if self._use_sw_controls:
+            self.sw_contrast = v / 100.0
         self._pending_con = v
         self._timer.start()
 
@@ -655,6 +729,9 @@ class MonitorCard(QFrame):
         self._pending_con = None
         # Dispatch to worker thread — returns immediately, UI stays responsive
         self._sig_bri_con.emit(bri, con)
+        # For non-DDC monitors contrast is simulated via GDI32
+        if self._use_sw_controls and con is not None:
+            self._apply_ramp()
         if self.sync_hook and (bri is not None or con is not None):
             self.sync_hook(self.device_name, bri, con)
 
@@ -674,20 +751,34 @@ class MonitorCard(QFrame):
         self._apply_ramp()
 
     def _apply_ramp(self, user_triggered: bool = False) -> None:
-        """Apply GDI32 ramp: custom curves composed with current gamma + warmth.
+        """Apply GDI32 ramp: custom curves + gamma + warmth + sw contrast/gains.
 
-        Falls back to plain gamma when no custom curves are set, or when the
+        Falls back to plain gamma when no custom effects are active, or when the
         driver doesn't support arbitrary ramps.  *user_triggered*=True means the
-        user just clicked Apply or a preset — on any failure we fall through to
-        plain gamma immediately so the user gets visible feedback.  Background
-        calls (gamma slider, rules engine, night mode) tolerate 2 transient
+        user just clicked Apply — on failure we fall through immediately so the
+        user gets visible feedback.  Background calls tolerate 2 transient
         failures before falling back, to avoid flicker on brief driver hiccups.
         """
-        if self._custom_luts is not None and not self._ramp_unsupported:
+        has_sw_effect = (
+            self._use_sw_controls and (
+                self.sw_contrast != 0.5
+                or self.sw_r_gain != 1.0
+                or self.sw_g_gain != 1.0
+                or self.sw_b_gain != 1.0
+            )
+        )
+        use_compose = (self._custom_luts is not None or has_sw_effect) and not self._ramp_unsupported
+        if use_compose:
             from lumina_control.curve_editor import compose_ramp, set_device_gamma_ramp
+            if self._custom_luts is not None:
+                r_lut, g_lut, b_lut = self._custom_luts
+            else:
+                identity = [int(round(i / 255 * 65535)) for i in range(256)]
+                r_lut = g_lut = b_lut = identity
             r, g, b = compose_ramp(
-                self._custom_luts[0], self._custom_luts[1], self._custom_luts[2],
+                r_lut, g_lut, b_lut,
                 self.gamma_value, self.current_warmth,
+                self.sw_contrast, self.sw_r_gain, self.sw_g_gain, self.sw_b_gain,
             )
             if set_device_gamma_ramp(self.device_name, r, g, b):
                 self._ramp_fail_count = 0
@@ -824,7 +915,21 @@ class MonitorCard(QFrame):
         if self._save_hook is not None:
             QTimer.singleShot(300, self._save_hook)
 
+    def _on_sw_rgb_applied(self, r_gain: float, g_gain: float, b_gain: float) -> None:
+        """Receive software RGB gains from CalibrationDialog (non-DDC monitors)."""
+        self.sw_r_gain = r_gain
+        self.sw_g_gain = g_gain
+        self.sw_b_gain = b_gain
+        self._apply_ramp()
+
     def _open_calibration(self) -> None:
+        sw_rgb_cb = self._on_sw_rgb_applied if self._use_sw_controls else None
+        initial_sw = (
+            {0x16: int(round(self.sw_r_gain * 100)),
+             0x18: int(round(self.sw_g_gain * 100)),
+             0x1A: int(round(self.sw_b_gain * 100))}
+            if self._use_sw_controls else None
+        )
         dlg = CalibrationDialog(
             self.monitor,
             self.descriptor.label,
@@ -832,6 +937,8 @@ class MonitorCard(QFrame):
             sync_rgb_callback=self.sync_rgb_hook,
             curves_applied_callback=self._on_curves_applied,
             initial_curves=self._custom_curve_points,
+            sw_rgb_callback=sw_rgb_cb,
+            initial_sw_rgb=initial_sw,
             parent=self.window(),
         )
         dlg.exec()

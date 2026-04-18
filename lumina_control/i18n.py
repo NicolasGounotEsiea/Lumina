@@ -336,6 +336,14 @@ _EN: dict[str, str] = {
     "Aucun écran détecté.":             "No monitors detected.",
     "{} écran(s) détecté(s) :":         "{} monitor(s) detected:",
     "DDC-CI indisponible":              "DDC-CI unavailable",
+    "DDC-CI inaccessible — activez « DDC/CI » dans le menu OSD du moniteur (boutons physiques) "
+    "puis relancez l'application.\n"
+    "Le slider γ Gamma et le contraste GPU restent disponibles ci-dessus.":
+        "DDC-CI inaccessible — enable \"DDC/CI\" in the monitor OSD menu (physical buttons) "
+        "then restart the application.\n"
+        "The γ Gamma slider and GPU contrast remain available above.",
+    "Luminosité non disponible (aucun backend DDC-CI ou WMI).":
+        "Brightness unavailable (no DDC-CI or WMI backend detected).",
     "Scan impossible : {}":             "Scan failed: {}",
     "Assistant de démarrage…":          "Setup wizard…",
 
@@ -522,6 +530,10 @@ _EN: dict[str, str] = {
     "Calibrage : {}":                   "Calibration: {}",
     "Ajustement fin des gains RGB (si supporté par l'écran).":
         "Fine-tune RGB gains (if supported by the monitor).",
+    "Gains RGB simulés via GPU (GDI32). 100 = neutre, 0 = canal éteint.":
+        "RGB gains simulated via GPU (GDI32). 100 = neutral, 0 = channel off.",
+    "Contraste simulé via GPU (GDI32) — indépendant du DDC-CI. 50 = neutre.":
+        "Contrast simulated via GPU (GDI32) — independent of DDC-CI. 50 = neutral.",
     "Lier R/G/B":                       "Link R/G/B",
     "Recharger":                        "Reload",
     "Gain global":                      "Global gain",

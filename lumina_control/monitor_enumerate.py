@@ -122,12 +122,24 @@ def _get_hz(device_name: str) -> float | None:
 def _count_wmi_brightness_monitors() -> int:
     """Return the number of WMI-controllable brightness monitors (laptop screens).
 
-    Returns 0 if WMI is unavailable or no brightness-capable monitors exist.
+    Tries the ``wmi`` package first, then falls back to ``win32com.client``
+    (ships with pywin32) so detection works without the optional wmi package.
+    Returns 0 if neither backend is available or no brightness monitors exist.
     """
+    # Try wmi package
     try:
         import wmi as _wmi
         c = _wmi.WMI(namespace="wmi")
         return len(c.WmiMonitorBrightness())
+    except ImportError:
+        pass
+    except Exception:
+        return 0
+    # Fallback: win32com.client (part of pywin32)
+    try:
+        import win32com.client
+        c = win32com.client.GetObject("winmgmts:root/wmi")
+        return len(list(c.InstancesOf("WmiMonitorBrightness")))
     except Exception:
         return 0
 
@@ -275,6 +287,21 @@ def enumerate_monitors() -> list[MonitorDescriptor]:
             ddc_handle  = assigned,
             model_name  = model_name,
         ))
+
+    # ── Probe DDC handles — discard non-functional ones ───────────────────────
+    # Some laptop built-in panels (eDP/LVDS) expose a DDC handle via DXVA2 but
+    # always fail with an I2C error.  Probing lets WMI take over for those.
+    for d in descriptors:
+        if d.ddc_handle is not None:
+            try:
+                with d.ddc_handle:
+                    d.ddc_handle.get_luminance()
+            except Exception as _probe_err:
+                log.debug(
+                    "DDC probe failed for %s (%s) — releasing handle for WMI fallback",
+                    d.device_name, _probe_err,
+                )
+                d.ddc_handle = None
 
     # ── Assign brightness backends ────────────────────────────────────────────
     # DDC monitors get the 'ddc' backend immediately.

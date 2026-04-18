@@ -5,6 +5,24 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/).
 
 ---
 
+## [1.2.8] — 2026-04-19
+
+### Ajouté
+- **Support complet des dalles internes (laptops)** : les écrans intégrés sans DDC-CI fonctionnels sont maintenant détectés et contrôlés.
+  - **Luminosité via WMI** : utilise le package `wmi` si disponible, sinon fallback automatique sur `win32com.client` + `ExecMethod_` (fourni avec `pywin32` — aucune dépendance supplémentaire).
+  - **Contraste simulé GPU** : slider contraste redirigé vers `SetDeviceGammaRamp` (stretch linéaire autour du gris moyen). 50 = neutre, 0 = gris plat, 100 = contraste maximal.
+  - **Gains RGB simulés GPU** : onglet Calibrage ouvert depuis une dalle sans DDC-CI affiche un mode « GPU » — sliders R/G/B (0–100, 100 = neutre) appliqués via `compose_ramp` + `SetDeviceGammaRamp`.
+- **`compose_ramp` enrichi** : nouveaux paramètres `contrast` (0.5 = identité) et `r_gain/g_gain/b_gain` (1.0 = identité) qui se composent avec gamma, chaleur et courbes tonales. Entièrement rétro-compatible.
+- **Sonde DDC au démarrage** : chaque handle DDC est testé par un `get_luminance()` avant attribution. Les dalles eDP/intégrées qui exposent un handle DXVA2 mais échouent systématiquement sur I2C (`Une erreur s'est produite lors de la transmission`) sont détectées et redirigées vers WMI.
+- **Mode dégradé `_mark_sw_only`** : quand la luminosité est indisponible (WMI échoue ou backend `none`), le corps de la card reste visible — contraste GPU et gamma GDI32 restent accessibles. Auparavant le corps entier était masqué.
+
+### Corrigé
+- **Gamma masqué sur DDC indisponible** : `_mark_unavailable` cachait tout le corps de la card y compris le slider γ Gamma, alors que le message disait « le gamma reste disponible ». Le corps est maintenant toujours visible ; seuls les sliders bri/con sont désactivés.
+- **Backend WMI non détecté sans le package `wmi`** : `_count_wmi_brightness_monitors()` utilisait uniquement le package optionnel `wmi` — si absent, les dalles laptop tombaient en `backend=none`. Corrigé par le double fallback `wmi` → `win32com.client`.
+- **Écriture WMI échouait avec `win32com` late-binding** : l'appel direct `WmiSetBrightness(50, 0)` retournait `WBEM_E_INVALID_PARAMETER` car `win32com` ne convertit pas automatiquement `int` → `uint8/uint32`. Corrigé en passant par `ExecMethod_` + `SpawnInstance_()` qui instancie les paramètres avec les bons types COM.
+
+---
+
 ## [1.2.7] — 2026-04-18
 
 ### Ajouté
