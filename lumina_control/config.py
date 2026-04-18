@@ -3,7 +3,7 @@ import os
 import sys
 
 APP_NAME = "Lumina Control"
-APP_VERSION = "1.2.6"
+APP_VERSION = "1.2.7"
 APP_WIDTH = 420
 SINGLE_INSTANCE_SERVER = "LuminaControl_SingleInstance"
 

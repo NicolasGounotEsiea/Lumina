@@ -5,6 +5,19 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/).
 
 ---
 
+## [1.2.7] — 2026-04-18
+
+### Ajouté
+- **Courbes tonales dans les profils nommés** : les courbes R/G/B par canal sont maintenant sauvegardées avec chaque profil nommé (`named_profiles.json`). Charger un profil restaure les courbes sur les écrans concernés — ou les efface si le profil n'en contient pas. Rétro-compatible avec les profils existants (pas de courbes = comportement identique).
+- **Courbes tonales dans les profils automatiques (App Rules)** : chaque règle peut désormais inclure des courbes R/G/B. Un bouton « Modifier les courbes… » dans le formulaire de règle ouvre un éditeur complet (`_RuleCurvesDialog`) avec sélecteur de canal, présets S-Curve/Film/γ 2.2 et éditeur interactif. Les courbes sont appliquées via GDI32 à l'entrée dans la règle et rigoureusement restaurées à la sortie, sans polluer `settings.json` (les courbes de règles sont transitoires).
+- **Éditeur de courbes redessiné** : refonte complète du widget `_CurveWidget` — panneau sombre en double carte, graduations d'axes (0/50/100), grille pixel-snappée, dégradé de remplissage sous la courbe active, points avec anneau + halo hover/drag, curseur adaptatif (`PointingHandCursor` sur les points), lecture de coordonnées live pendant le drag, pilule canal colorée, texte d'aide i18n.
+
+### Corrigé
+- **Fuite de courbes transitoires dans `settings.json`** : quand une règle automatique appliquait des courbes, `_on_curves_applied` déclenchait `save_hook` et persistait les courbes de la règle comme baseline utilisateur. Au redémarrage, ces courbes restaient actives sans la règle. Corrigé en bypassant `_on_curves_applied` dans `rules_engine._apply` (set direct de `_custom_luts` sans save_hook).
+- **Boutons Présets masqués** : hauteur fixe `26px` incompatible avec le `padding: 7px 14px` du style `pill-muted` (texte coupé). Corrigé en supprimant le `setFixedHeight` sur ces boutons.
+
+---
+
 ## [1.2.6] — 2026-04-15
 
 ### Sécurité

@@ -567,11 +567,16 @@ class _RuleCurvesDialog(QDialog):
 
         ch_row = QHBoxLayout()
         ch_row.setSpacing(6)
+        lbl_ch = QLabel(_("Canal"))
+        lbl_ch.setStyleSheet(
+            f"font-size:11px; color:{TEXT_MUTED}; letter-spacing:0.4px;")
+        ch_row.addWidget(lbl_ch)
+        ch_row.addSpacing(4)
         self._ch_btns: dict[str, QPushButton] = {}
-        for ch, name in (("R", _("Rouge")), ("G", _("Vert")), ("B", _("Bleu"))):
-            btn = QPushButton(name)
+        for ch in ("R", "G", "B"):
+            btn = QPushButton(ch)
             btn.setCheckable(True)
-            btn.setFixedHeight(26)
+            btn.setFixedSize(36, 26)
             btn.setCursor(Qt.PointingHandCursor)
             btn.clicked.connect(lambda _c, c=ch: self._set_channel(c))
             ch_row.addWidget(btn)
@@ -580,13 +585,15 @@ class _RuleCurvesDialog(QDialog):
         layout.addLayout(ch_row)
 
         preset_row = QHBoxLayout()
-        lbl_pre = QLabel(_("Présets :"))
-        lbl_pre.setStyleSheet(f"font-size:11px; color:{TEXT_MUTED};")
+        preset_row.setSpacing(6)
+        lbl_pre = QLabel(_("Présets"))
+        lbl_pre.setStyleSheet(
+            f"font-size:11px; color:{TEXT_MUTED}; letter-spacing:0.4px;")
         preset_row.addWidget(lbl_pre)
+        preset_row.addSpacing(4)
         for name, pts in self._PRESETS.items():
             b = QPushButton(name)
             b.setProperty("class", "pill-muted")
-            b.setFixedHeight(24)
             b.setCursor(Qt.PointingHandCursor)
             b.clicked.connect(lambda _c, p=pts: self._apply_preset(p))
             preset_row.addWidget(b)
@@ -624,8 +631,32 @@ class _RuleCurvesDialog(QDialog):
         layout.addLayout(btn_row)
 
     def _set_channel(self, ch: str) -> None:
+        rgb = {"R": (230, 90, 95), "G": (95, 200, 110), "B": (95, 140, 240)}
         for c, b in self._ch_btns.items():
             b.setChecked(c == ch)
+            r, g, bl = rgb[c]
+            if c == ch:
+                b.setStyleSheet(
+                    f"QPushButton{{"
+                    f"background:rgba({r},{g},{bl},48);"
+                    f"border:1px solid rgba({r},{g},{bl},190);"
+                    f"color:rgb({r},{g},{bl});"
+                    f"border-radius:13px;font-weight:bold;font-size:12px;"
+                    f"padding:0px;}}"
+                )
+            else:
+                b.setStyleSheet(
+                    f"QPushButton{{"
+                    f"background:rgba(255,255,255,10);"
+                    f"border:1px solid rgba(255,255,255,24);"
+                    f"color:rgba({r},{g},{bl},165);"
+                    f"border-radius:13px;font-weight:bold;font-size:12px;"
+                    f"padding:0px;}}"
+                    f"QPushButton:hover{{"
+                    f"background:rgba({r},{g},{bl},22);"
+                    f"border:1px solid rgba({r},{g},{bl},110);"
+                    f"color:rgba({r},{g},{bl},220);}}"
+                )
         self._curve_widget.set_channel(ch)
 
     def _apply_preset(self, pts: list) -> None:

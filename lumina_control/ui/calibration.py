@@ -334,9 +334,17 @@ class _CurveWidget(QWidget):
                 self.curve_changed.emit()
 
     def mouseMoveEvent(self, event) -> None:
+        pts = self._curves[self._active]
+        # Hover feedback when not dragging
         if self._drag_idx is None:
+            hit = self._hit_test(event.x(), event.y(), pts)
+            if hit != self._hover_idx:
+                self._hover_idx = hit
+                self.setCursor(Qt.PointingHandCursor if hit is not None
+                               else Qt.CrossCursor)
+                self.update()
             return
-        pts  = self._curves[self._active]
+
         x, y = self._to_norm(event.x(), event.y())
         idx  = self._drag_idx
 
@@ -353,12 +361,21 @@ class _CurveWidget(QWidget):
             x = max(pts[idx - 1][0] + 0.01, min(pts[idx + 1][0] - 0.01, x))
 
         pts[idx] = (x, y)
+        self._drag_norm = (x, y)
         self.update()
 
     def mouseReleaseEvent(self, event) -> None:
         if self._drag_idx is not None:
             self._drag_idx = None
+            self._drag_norm = None
+            self.update()
             self.curve_changed.emit()
+
+    def leaveEvent(self, event) -> None:
+        if self._hover_idx is not None:
+            self._hover_idx = None
+            self.update()
+        super().leaveEvent(event)
 
 
 # ── Calibration dialog (tabbed: Gains RGB + Courbes) ─────────────────────────
@@ -488,18 +505,22 @@ class CalibrationDialog(QDialog):
     def _build_curves_tab(self) -> QWidget:
         tab = QWidget()
         layout = QVBoxLayout(tab)
-        layout.setSpacing(8)
-        layout.setContentsMargins(8, 10, 8, 8)
+        layout.setSpacing(10)
+        layout.setContentsMargins(10, 12, 10, 10)
 
-        # Channel selector
+        # Channel selector — compact segmented pills
         ch_row = QHBoxLayout()
-        lbl_ch = QLabel(_("Canal :"))
+        ch_row.setSpacing(6)
+        lbl_ch = QLabel(_("Canal"))
         lbl_ch.setObjectName("Subtle")
+        lbl_ch.setStyleSheet("font-size:11px; letter-spacing:0.4px;")
         ch_row.addWidget(lbl_ch)
+        ch_row.addSpacing(4)
         for ch in ("R", "G", "B"):
             btn = QPushButton(ch)
             btn.setCheckable(True)
-            btn.setFixedSize(40, 28)
+            btn.setFixedSize(36, 26)
+            btn.setCursor(Qt.PointingHandCursor)
             btn.clicked.connect(partial(self._set_curve_channel, ch))
             ch_row.addWidget(btn)
             self._ch_btns[ch] = btn
@@ -510,9 +531,12 @@ class CalibrationDialog(QDialog):
 
         # Preset buttons
         preset_row = QHBoxLayout()
-        lbl_pre = QLabel(_("Présets :"))
+        preset_row.setSpacing(6)
+        lbl_pre = QLabel(_("Présets"))
         lbl_pre.setObjectName("Subtle")
+        lbl_pre.setStyleSheet("font-size:11px; letter-spacing:0.4px;")
         preset_row.addWidget(lbl_pre)
+        preset_row.addSpacing(4)
         _PRESETS = {
             "S-Curve": [(0.0, 0.0), (0.25, 0.18), (0.75, 0.82), (1.0, 1.0)],
             "Film":    [(0.0, 0.0), (0.1, 0.12), (0.5, 0.52), (0.9, 0.88), (1.0, 1.0)],
@@ -521,7 +545,7 @@ class CalibrationDialog(QDialog):
         for name, pts in _PRESETS.items():
             btn_pre = QPushButton(name)
             btn_pre.setProperty("class", "pill-muted")
-            btn_pre.setFixedHeight(24)
+            btn_pre.setCursor(Qt.PointingHandCursor)
             btn_pre.clicked.connect(partial(self._apply_preset, pts))
             preset_row.addWidget(btn_pre)
         preset_row.addStretch()
@@ -570,29 +594,34 @@ class CalibrationDialog(QDialog):
     # ── Channel buttons ───────────────────────────────────────────────────────
 
     def _update_ch_btn_styles(self, active: str) -> None:
-        # (r, g, b) matching _CurveWidget._CH_COL
-        rgb = {"R": (210, 65, 65), "G": (65, 185, 65), "B": (65, 110, 220)}
+        # Colours match _CurveWidget._CH_COL so the UI feels consistent.
+        rgb = {"R": (230, 90, 95), "G": (95, 200, 110), "B": (95, 140, 240)}
         for ch, btn in self._ch_btns.items():
             r, g, b = rgb[ch]
             if ch == active:
                 btn.setStyleSheet(
                     f"QPushButton{{"
-                    f"background:rgba({r},{g},{b},52);"
-                    f"border:1px solid rgba({r},{g},{b},200);"
+                    f"background:rgba({r},{g},{b},48);"
+                    f"border:1px solid rgba({r},{g},{b},190);"
                     f"color:rgb({r},{g},{b});"
-                    f"border-radius:6px;font-weight:bold;font-size:12px;}}"
+                    f"border-radius:13px;font-weight:bold;font-size:12px;"
+                    f"padding:0px;"
+                    f"}}"
                 )
             else:
                 btn.setStyleSheet(
                     f"QPushButton{{"
-                    f"background:rgba(255,255,255,8);"
-                    f"border:1px solid rgba(255,255,255,28);"
-                    f"color:rgba({r},{g},{b},140);"
-                    f"border-radius:6px;font-weight:bold;font-size:12px;}}"
+                    f"background:rgba(255,255,255,10);"
+                    f"border:1px solid rgba(255,255,255,24);"
+                    f"color:rgba({r},{g},{b},165);"
+                    f"border-radius:13px;font-weight:bold;font-size:12px;"
+                    f"padding:0px;"
+                    f"}}"
                     f"QPushButton:hover{{"
-                    f"background:rgba({r},{g},{b},18);"
-                    f"border:1px solid rgba({r},{g},{b},100);"
-                    f"color:rgba({r},{g},{b},200);}}"
+                    f"background:rgba({r},{g},{b},22);"
+                    f"border:1px solid rgba({r},{g},{b},110);"
+                    f"color:rgba({r},{g},{b},220);"
+                    f"}}"
                 )
 
     def _set_curve_channel(self, ch: str) -> None:

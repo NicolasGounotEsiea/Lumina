@@ -15,10 +15,12 @@
 | **Mode Jeu** | Détection plein écran automatique ; applique un préréglage bri/con sur l'écran du jeu uniquement, suspend le DDC-CI de cet écran, thème rouge dans l'UI. Priorité maximale sur Focus et Profils Auto. |
 | **Luminosité circadienne** | Courbe cosinus ancrée au lever/coucher réel du soleil (algorithme NOAA). Luminosité et chaleur d'écran varient automatiquement sur 24 h. Visualisation en temps réel dans le panneau. |
 | **Chaleur circadienne** | Tint chaud inversement proportionnel à la courbe de luminosité — maximum la nuit, neutre à midi solaire. Indépendant du Mode Nuit. |
-| **Profils par app** | Règles automatiques déclenchées par l'application en focus (500 ms) — luminosité, contraste, gamma, gains RVB ; ciblage par écran via `MonitorFromWindow`. |
+| **Profils par app** | Règles automatiques déclenchées par l'application en focus (500 ms) — luminosité, contraste, gamma, gains RVB, **courbes tonales** ; ciblage par écran via `MonitorFromWindow`. |
 | **Colorimétrie** | Gains R/V/B DDC-CI par règle d'application, avec aperçu swatch en direct |
 | **Calibrage RGB** | Dialog par écran : onglet Gains R/V/B DDC-CI + assistant guidé 6 étapes avec patterns plein écran |
-| **Courbes de tons & ICC** | Éditeur de courbes tonales par canal (spline monotone Fritsch-Carlson, 256 points) appliquées via `SetDeviceGammaRamp`. Export profil ICC v2 compatible Photoshop / Lightroom / DaVinci Resolve. Les courbes se composent avec gamma et chaleur sans se perdre. |
+| **Courbes de tons & ICC** | Éditeur de courbes tonales par canal R/G/B (spline monotone Fritsch-Carlson, 256 points) appliquées via `SetDeviceGammaRamp`. Export profil ICC v2 compatible Photoshop / Lightroom / DaVinci Resolve. Les courbes se composent avec gamma et chaleur. Éditeur redessiné : graduations d'axes, dégradé sous courbe, lecture live des coordonnées, halo hover/drag. |
+| **Courbes dans les profils nommés** | Les courbes R/G/B sont incluses dans les profils nommés (`named_profiles.json`) — sauvegardées et restaurées automatiquement. Rétro-compatible. |
+| **Courbes dans les profils auto** | Chaque règle d'application peut définir ses propres courbes tonales. Appliquées à l'entrée de la règle, restaurées à la sortie sans polluer les réglages permanents. |
 | **Noms d'écrans (EDID)** | Résolution en deux temps : `EnumDisplayDevices` puis fallback EDID registry (`HKLM\...\DISPLAY\<model>`) — couvre tous les moniteurs PnP même sans driver EDID. |
 | **Rétroéclairage WMI** | Backend WMI pour les dalles internes (laptops) sans DDC-CI. Connexion WMI mise en cache par worker (reset-on-error). |
 | **Détection HDR** | `hdr.get_hdr_info()` via `DisplayConfig` API — remonte `hdr_supported` et `hdr_enabled` par écran (Windows Advanced Color). |
@@ -211,8 +213,10 @@ Voir les [issues ouvertes](https://github.com/NicolasGounotEsiea/Lumina/issues) 
 - [x] F13 — Slider luminosité globale en temps réel
 - [x] F14 — Visualisation circadienne (courbe 24 h avec soleil/lune géométriques)
 - [x] F15 — Hiérarchie visuelle des sections (séparateurs de groupes étiquetés)
-- [x] F16 — Éditeur de courbes tonales par canal (spline Fritsch-Carlson)
+- [x] F16 — Éditeur de courbes tonales par canal (spline Fritsch-Carlson) — redessiné v1.2.7
 - [x] F17 — Export profil ICC v2 (compatible Photoshop, Lightroom, DaVinci Resolve)
+- [x] F18 — Courbes tonales dans les profils nommés
+- [x] F19 — Courbes tonales dans les profils automatiques par application
 
 ---
 
