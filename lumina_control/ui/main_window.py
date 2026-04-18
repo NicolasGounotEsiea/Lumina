@@ -1205,7 +1205,14 @@ class MainWindow(QWidget):
             for c in self.cards
         ]
         gamma_values = {c.device_name: c.gamma_value for c in self.cards}
-        self._profile.save_named_profile(name, monitors, gamma_values)
+        curve_points = {
+            c.device_name: {
+                ch: [list(p) for p in pts]
+                for ch, pts in c._custom_curve_points.items()
+            }
+            for c in self.cards if c._custom_curve_points is not None
+        }
+        self._profile.save_named_profile(name, monitors, gamma_values, curve_points)
         self._profile_name_edit.clear()
         self._refresh_named_profiles_list()
 
@@ -1231,6 +1238,33 @@ class MainWindow(QWidget):
                 if c.device_name == dev:
                     c.set_gamma_value(float(gamma))
                     c.current_warmth = warmth
+
+        curve_points = data.get("curve_points", {}) or {}
+        for c in self.cards:
+            dev_pts = curve_points.get(c.device_name)
+            if dev_pts:
+                from lumina_control.curve_editor import monotone_lut
+                r_lut = monotone_lut(dev_pts.get("R", [(0.0, 0.0), (1.0, 1.0)]))
+                g_lut = monotone_lut(dev_pts.get("G", [(0.0, 0.0), (1.0, 1.0)]))
+                b_lut = monotone_lut(dev_pts.get("B", [(0.0, 0.0), (1.0, 1.0)]))
+                c._custom_luts = (r_lut, g_lut, b_lut)
+                c._custom_curve_points = {
+                    ch: [tuple(p) for p in pts]
+                    for ch, pts in dev_pts.items()
+                }
+                c._ramp_fail_count = 0
+                c._ramp_unsupported = False
+                c._apply_ramp(user_triggered=True)
+            else:
+                if c._custom_luts is not None:
+                    c._custom_luts = None
+                    c._custom_curve_points = None
+                    c._apply_ramp()
+        self.curve_points = {
+            dev: {ch: [list(p) for p in pts] for ch, pts in pts_by_ch.items()}
+            for dev, pts_by_ch in curve_points.items()
+        }
+        self.save_settings()
 
     def _delete_named_profile(self, name: str) -> None:
         self._profile.delete_named_profile(name)

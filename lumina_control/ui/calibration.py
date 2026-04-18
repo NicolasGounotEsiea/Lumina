@@ -4,7 +4,9 @@ import os
 from functools import partial
 
 from PySide6.QtCore import Qt, QTimer, Signal
-from PySide6.QtGui import QColor, QFont, QPainter, QPainterPath, QPen
+from PySide6.QtGui import (
+    QBrush, QColor, QFont, QLinearGradient, QPainter, QPainterPath, QPen,
+)
 from PySide6.QtWidgets import (
     QApplication, QCheckBox, QComboBox, QDialog, QHBoxLayout, QLabel,
     QMessageBox, QPushButton, QFileDialog, QSlider, QTabWidget,
@@ -32,26 +34,33 @@ class _CurveWidget(QWidget):
 
     curve_changed = Signal()
 
-    _PAD  = 18     # px margin around the plot area
-    _HIT  = 11     # px hit-test radius for control points
-    _DRAW = 7      # px drawn radius for control points
+    _PAD_L = 26    # left margin (room for Y tick labels)
+    _PAD_R = 14
+    _PAD_T = 14
+    _PAD_B = 24    # bottom margin (room for X tick labels)
+    _HIT   = 11    # px hit-test radius for control points
+    _DRAW  = 6     # px drawn radius for control points
 
     _CH_COL: dict[str, tuple[int, int, int]] = {
-        "R": (210, 65,  65),
-        "G": (65,  185, 65),
-        "B": (65,  110, 220),
+        "R": (230, 90,  95),
+        "G": (95,  200, 110),
+        "B": (95,  140, 240),
     }
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
         self.setFixedSize(334, 220)
         self.setCursor(Qt.CrossCursor)
+        self.setMouseTracking(True)
 
         self._curves: dict[str, list[tuple[float, float]]] = {
             ch: [(0.0, 0.0), (1.0, 1.0)] for ch in ("R", "G", "B")
         }
         self._active: str = "R"
         self._drag_idx: int | None = None
+        self._hover_idx: int | None = None
+        # Normalised (x, y) of cursor during drag — shown as live coord readout.
+        self._drag_norm: tuple[float, float] | None = None
 
     # ── Public helpers ────────────────────────────────────────────────────────
 
@@ -74,17 +83,23 @@ class _CurveWidget(QWidget):
 
     # ── Coordinate helpers ────────────────────────────────────────────────────
 
+    def _plot_rect(self) -> tuple[int, int, int, int]:
+        """Return (x, y, w, h) of the inner plot area."""
+        x = self._PAD_L
+        y = self._PAD_T
+        w = self.width()  - self._PAD_L - self._PAD_R
+        h = self.height() - self._PAD_T - self._PAD_B
+        return x, y, w, h
+
     def _to_px(self, x: float, y: float) -> tuple[int, int]:
-        w = self.width()  - 2 * self._PAD
-        h = self.height() - 2 * self._PAD
-        return (int(self._PAD + x * w),
-                int(self._PAD + (1.0 - y) * h))
+        px_x, px_y, w, h = self._plot_rect()
+        return (int(round(px_x + x * w)),
+                int(round(px_y + (1.0 - y) * h)))
 
     def _to_norm(self, px: int, py: int) -> tuple[float, float]:
-        w = self.width()  - 2 * self._PAD
-        h = self.height() - 2 * self._PAD
-        x = max(0.0, min(1.0, (px - self._PAD) / w)) if w > 0 else 0.0
-        y = max(0.0, min(1.0, 1.0 - (py - self._PAD) / h)) if h > 0 else 0.0
+        px_x, px_y, w, h = self._plot_rect()
+        x = max(0.0, min(1.0, (px - px_x) / w)) if w > 0 else 0.0
+        y = max(0.0, min(1.0, 1.0 - (py - px_y) / h)) if h > 0 else 0.0
         return x, y
 
     def _hit_test(self, px: int, py: int,
@@ -99,102 +114,193 @@ class _CurveWidget(QWidget):
 
     def paintEvent(self, _event) -> None:
         p = QPainter(self)
-        p.setRenderHint(QPainter.Antialiasing)
-        p.setRenderHint(QPainter.TextAntialiasing)
+        p.setRenderHint(QPainter.Antialiasing, True)
+        p.setRenderHint(QPainter.TextAntialiasing, True)
+        p.setRenderHint(QPainter.SmoothPixmapTransform, True)
 
-        pad = self._PAD
-        w   = self.width()  - 2 * pad
-        h   = self.height() - 2 * pad
+        r_full = self.rect().adjusted(0, 0, -1, -1)
 
-        # ── Rounded background ────────────────────────────────────────────────
+        # ── Outer rounded panel (fill + 1 px border) ──────────────────────────
         p.setPen(Qt.NoPen)
-        p.setBrush(QColor(13, 13, 15))
-        p.drawRoundedRect(self.rect(), 8, 8)
+        p.setBrush(QColor(16, 17, 20))
+        p.drawRoundedRect(r_full, 10, 10)
+        p.setBrush(Qt.NoBrush)
+        p.setPen(QPen(QColor(255, 255, 255, 22), 1))
+        p.drawRoundedRect(
+            float(r_full.x()) + 0.5, float(r_full.y()) + 0.5,
+            float(r_full.width()), float(r_full.height()),
+            10, 10,
+        )
 
-        # ── Grid (4×4, barely visible) ────────────────────────────────────────
-        p.setPen(QPen(QColor(255, 255, 255, 11), 1))
-        for i in range(1, 4):
-            gx = pad + i * w // 4
-            gy = pad + i * h // 4
-            p.drawLine(gx, pad, gx, pad + h)
-            p.drawLine(pad, gy, pad + w, gy)
+        px_x, px_y, w, h = self._plot_rect()
 
-        # ── Diagonal reference (identity / linear) ────────────────────────────
-        pen_diag = QPen(QColor(255, 255, 255, 20), 1, Qt.DashLine)
+        # ── Plot area background (slightly darker inset card) ─────────────────
+        p.setPen(Qt.NoPen)
+        p.setBrush(QColor(10, 11, 13))
+        p.drawRoundedRect(px_x - 4, px_y - 4, w + 8, h + 8, 6, 6)
+        p.setBrush(Qt.NoBrush)
+        p.setPen(QPen(QColor(255, 255, 255, 14), 1))
+        p.drawRoundedRect(
+            float(px_x) - 3.5, float(px_y) - 3.5, float(w + 7), float(h + 7),
+            6, 6,
+        )
+
+        # ── Grid (quarter lines) — pixel-snapped for crispness ────────────────
+        grid = QPen(QColor(255, 255, 255, 16), 1)
+        grid.setCosmetic(True)
+        p.setPen(grid)
+        for i in (1, 2, 3):
+            gx = px_x + round(i * w / 4) + 0.5
+            gy = px_y + round(i * h / 4) + 0.5
+            p.drawLine(int(gx), px_y, int(gx), px_y + h)
+            p.drawLine(px_x, int(gy), px_x + w, int(gy))
+
+        # ── Diagonal reference (identity) ─────────────────────────────────────
+        pen_diag = QPen(QColor(255, 255, 255, 28), 1, Qt.DashLine)
+        pen_diag.setDashPattern([3, 3])
         p.setPen(pen_diag)
-        p.drawLine(pad, pad + h, pad + w, pad)
+        p.drawLine(px_x, px_y + h, px_x + w, px_y)
+
+        # ── Axis tick labels (0 / 50 / 100) ───────────────────────────────────
+        p.setFont(QFont("Segoe UI", 7))
+        p.setPen(QColor(255, 255, 255, 70))
+        fm_tick = p.fontMetrics()
+        # X axis: 0, 50, 100 underneath
+        for frac, lbl_txt in ((0.0, "0"), (0.5, "50"), (1.0, "100")):
+            tx = px_x + int(frac * w)
+            tw = fm_tick.horizontalAdvance(lbl_txt)
+            p.drawText(tx - tw // 2, px_y + h + fm_tick.ascent() + 4, lbl_txt)
+        # Y axis: 0, 50, 100 to the left
+        for frac, lbl_txt in ((0.0, "0"), (0.5, "50"), (1.0, "100")):
+            ty = px_y + int((1.0 - frac) * h)
+            tw = fm_tick.horizontalAdvance(lbl_txt)
+            p.drawText(px_x - tw - 6, ty + fm_tick.ascent() // 2 - 1, lbl_txt)
 
         # ── Inactive channels (ghosted but readable as reference) ─────────────
         for ch in ("R", "G", "B"):
             if ch == self._active:
                 continue
-            r, g, b = self._CH_COL[ch]
-            pen_inactive = QPen(QColor(r, g, b, 58))
-            pen_inactive.setWidthF(1.8)
+            rc, gc, bc = self._CH_COL[ch]
+            pen_inactive = QPen(QColor(rc, gc, bc, 72))
+            pen_inactive.setWidthF(1.4)
+            pen_inactive.setCapStyle(Qt.RoundCap)
+            pen_inactive.setJoinStyle(Qt.RoundJoin)
             p.setPen(pen_inactive)
-            self._draw_curve_path(p, ch, pad, w, h)
+            self._draw_curve_path(p, ch, px_x, px_y, w, h)
 
-        # ── Active channel (full brightness) ──────────────────────────────────
-        r, g, b = self._CH_COL[self._active]
-        pen_active = QPen(QColor(r, g, b, 255))
-        pen_active.setWidthF(3.0)
+        # ── Area fill under active curve (subtle gradient) ────────────────────
+        rc, gc, bc = self._CH_COL[self._active]
+        area_path = self._build_curve_path(
+            self._active, px_x, px_y, w, h, closed_baseline=True)
+        grad = QLinearGradient(0, px_y, 0, px_y + h)
+        grad.setColorAt(0.0, QColor(rc, gc, bc, 72))
+        grad.setColorAt(1.0, QColor(rc, gc, bc, 0))
+        p.setPen(Qt.NoPen)
+        p.setBrush(QBrush(grad))
+        p.drawPath(area_path)
+
+        # ── Active channel curve ──────────────────────────────────────────────
+        pen_active = QPen(QColor(rc, gc, bc, 255))
+        pen_active.setWidthF(2.4)
         pen_active.setCapStyle(Qt.RoundCap)
         pen_active.setJoinStyle(Qt.RoundJoin)
         p.setPen(pen_active)
-        self._draw_curve_path(p, self._active, pad, w, h)
+        p.setBrush(Qt.NoBrush)
+        self._draw_curve_path(p, self._active, px_x, px_y, w, h)
 
         # ── Control points (active channel) ───────────────────────────────────
-        pts     = self._curves[self._active]
-        r, g, b = self._CH_COL[self._active]
-        outline = QPen(QColor(13, 13, 15, 215), 2.0)
+        pts = self._curves[self._active]
         for i, (x, y) in enumerate(pts):
             cx, cy = self._to_px(x, y)
-            is_end = (i == 0 or i == len(pts) - 1)
-            d      = self._DRAW if is_end else self._DRAW - 1
-            p.setBrush(QColor(r, g, b, 205 if is_end else 255))
-            p.setPen(outline)
+            is_end  = (i == 0 or i == len(pts) - 1)
+            is_drag = (i == self._drag_idx)
+            is_hov  = (i == self._hover_idx and not is_drag)
+            d = self._DRAW + (1 if is_drag else 0)
+            # halo on drag/hover
+            if is_drag or is_hov:
+                halo_alpha = 70 if is_drag else 42
+                p.setBrush(QColor(rc, gc, bc, halo_alpha))
+                p.setPen(Qt.NoPen)
+                p.drawEllipse(cx - d - 4, cy - d - 4,
+                              2 * (d + 4), 2 * (d + 4))
+            # ring: dark outline then coloured fill
+            p.setPen(QPen(QColor(8, 9, 11, 230), 2.0))
+            fill_alpha = 230 if is_end else 255
+            p.setBrush(QColor(rc, gc, bc, fill_alpha))
             p.drawEllipse(cx - d, cy - d, 2 * d, 2 * d)
+            # inner highlight dot
+            p.setPen(Qt.NoPen)
+            p.setBrush(QColor(255, 255, 255, 120))
+            p.drawEllipse(cx - 1, cy - 2, 2, 2)
 
-        # ── Channel label (top-right of plot) ─────────────────────────────────
-        font = QFont("Segoe UI", 9, QFont.Bold)
-        p.setFont(font)
-        p.setPen(QColor(r, g, b, 100))
-        fm  = p.fontMetrics()
-        lbl = self._active
-        p.drawText(pad + w - fm.horizontalAdvance(lbl) - 4,
-                   pad + fm.ascent() + 2, lbl)
+        # ── Channel pill label (top-left of plot) ─────────────────────────────
+        p.setFont(QFont("Segoe UI", 8, QFont.Bold))
+        fm_lbl = p.fontMetrics()
+        lbl_text = self._active
+        tw = fm_lbl.horizontalAdvance(lbl_text)
+        pill_w = tw + 14
+        pill_h = fm_lbl.height() + 2
+        pill_x = px_x
+        pill_y = px_y + 4
+        p.setPen(Qt.NoPen)
+        p.setBrush(QColor(rc, gc, bc, 50))
+        p.drawRoundedRect(pill_x, pill_y, pill_w, pill_h,
+                          pill_h / 2, pill_h / 2)
+        p.setPen(QColor(rc, gc, bc, 235))
+        p.drawText(pill_x + 7, pill_y + fm_lbl.ascent(), lbl_text)
+
+        # ── Live coordinate readout (top-right while dragging) ────────────────
+        if self._drag_norm is not None:
+            cx_v, cy_v = self._drag_norm
+            txt = f"{int(round(cx_v*100))},{int(round(cy_v*100))}"
+            p.setFont(QFont("Segoe UI", 8))
+            fm_co = p.fontMetrics()
+            tw2 = fm_co.horizontalAdvance(txt)
+            box_w = tw2 + 12
+            box_h = fm_co.height() + 2
+            box_x = px_x + w - box_w
+            box_y = px_y + 4
+            p.setPen(Qt.NoPen)
+            p.setBrush(QColor(0, 0, 0, 140))
+            p.drawRoundedRect(box_x, box_y, box_w, box_h,
+                              box_h / 2, box_h / 2)
+            p.setPen(QColor(255, 255, 255, 220))
+            p.drawText(box_x + 6, box_y + fm_co.ascent(), txt)
 
         # ── Hint text (shown only on default identity curve) ──────────────────
-        if len(self._curves[self._active]) == 2:
-            font_hint = QFont("Segoe UI", 8)
-            p.setFont(font_hint)
-            p.setPen(QColor(255, 255, 255, 38))
-            hint = "Clic gauche : ajouter un point"
-            fm2  = p.fontMetrics()
-            hx   = (self.width() - fm2.horizontalAdvance(hint)) // 2
-            hy   = self.height() // 2 + fm2.ascent() // 2
+        elif len(self._curves[self._active]) == 2:
+            p.setFont(QFont("Segoe UI", 8))
+            p.setPen(QColor(255, 255, 255, 56))
+            hint = _("Clic : ajouter un point  ·  clic droit : supprimer")
+            fm_h = p.fontMetrics()
+            hx = px_x + (w - fm_h.horizontalAdvance(hint)) // 2
+            hy = px_y + h // 2 + fm_h.ascent() // 2 + 8
             p.drawText(hx, hy, hint)
-
-        # ── Widget border (rounded, very subtle) ──────────────────────────────
-        p.setBrush(Qt.NoBrush)
-        p.setPen(QPen(QColor(255, 255, 255, 20), 1))
-        p.drawRoundedRect(1, 1, self.width() - 2, self.height() - 2, 7, 7)
 
         p.end()
 
-    def _draw_curve_path(self, painter: QPainter, ch: str,
-                         pad: int, w: int, h: int) -> None:
+    def _build_curve_path(self, ch: str,
+                          px_x: int, px_y: int, w: int, h: int,
+                          closed_baseline: bool = False) -> QPainterPath:
         from lumina_control.curve_editor import monotone_lut
-        lut  = monotone_lut(self._curves[ch])
+        lut = monotone_lut(self._curves[ch])
         path = QPainterPath()
         for i, val in enumerate(lut):
-            px = pad + i * w // 255
-            py = pad + h - int(val / 65535.0 * h)
+            fx = px_x + i * w / 255.0
+            fy = px_y + h - val / 65535.0 * h
             if i == 0:
-                path.moveTo(px, py)
+                path.moveTo(fx, fy)
             else:
-                path.lineTo(px, py)
-        painter.drawPath(path)
+                path.lineTo(fx, fy)
+        if closed_baseline:
+            path.lineTo(px_x + w, px_y + h)
+            path.lineTo(px_x, px_y + h)
+            path.closeSubpath()
+        return path
+
+    def _draw_curve_path(self, painter: QPainter, ch: str,
+                         px_x: int, px_y: int, w: int, h: int) -> None:
+        painter.drawPath(self._build_curve_path(ch, px_x, px_y, w, h))
 
     # ── Mouse interaction ─────────────────────────────────────────────────────
 
@@ -242,6 +348,8 @@ class _CurveWidget(QWidget):
             x = 1.0
             y = 1.0
         else:
+            # Middle points: x keeps ordering, y is free — non-monotone
+            # LUTs are clamped to monotone in set_device_gamma_ramp.
             x = max(pts[idx - 1][0] + 0.01, min(pts[idx + 1][0] - 0.01, x))
 
         pts[idx] = (x, y)

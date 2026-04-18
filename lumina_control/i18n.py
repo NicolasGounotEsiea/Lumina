@@ -172,6 +172,23 @@ _EN: dict[str, str] = {
         "Window title filter (regex, optional)",
     "ex. Lecture en cours|Playing  — vide = toute fenêtre":
         "e.g. Now Playing|Playing  — empty = any window",
+    "Courbes tonales  —  LUT GPU":      "Tone curves  —  GPU LUT",
+    "Courbes RVB appliquées via GDI32 quand la règle est active  "
+        "(restaurées à la sortie de l'application).":
+        "RGB curves applied via GDI32 while the rule is active "
+        "(restored when leaving the app).",
+    "Modifier les courbes…":            "Edit curves…",
+    "Effacer":                          "Clear",
+    "Aucune courbe  ·  la règle ne touche pas au GPU LUT":
+        "No curves  ·  the rule leaves the GPU LUT alone",
+    "Courbes définies  ·  {} points au total":
+        "Curves set  ·  {} points total",
+    "Courbes tonales":                  "Tone curves",
+    "Clic gauche pour ajouter/déplacer un point  ·  "
+        "clic droit pour supprimer.":
+        "Left-click to add/move a point  ·  right-click to delete.",
+    "Valider":                          "OK",
+    "Présets :":                        "Presets:",
 
     # ── schedules ────────────────────────────────────────────────────────────
     "PLANIFICATION":                    "SCHEDULE",

@@ -85,6 +85,8 @@ class RulesEngine:
         self._pre_con: dict[str, int] = {}
         self._pre_gamma: dict[str, float] = {}
         self._pre_rgb: dict[str, tuple] = {}
+        # Saved (custom_luts, custom_curve_points) snapshot per device, for curve restore.
+        self._pre_curves: dict[str, tuple] = {}
         self._pre_device: str | None = None
 
     # ── Public properties ─────────────────────────────────────────────────────
@@ -203,6 +205,13 @@ class RulesEngine:
                 rgb = c.read_rgb()
                 if rgb is not None:
                     self._pre_rgb[c.device_name] = rgb
+        if rule.curve_points:
+            for c in target:
+                self._pre_curves[c.device_name] = (
+                    c._custom_luts,
+                    (dict(c._custom_curve_points)
+                     if c._custom_curve_points is not None else None),
+                )
         self._pre_device = device
 
     def _apply(self, rule: AppRule, device: str | None) -> None:
@@ -226,6 +235,26 @@ class RulesEngine:
             for c in self._get_cards():
                 if c.available and (not device or c.device_name == device):
                     c.set_gamma_value(rule.gamma)
+        if rule.curve_points:
+            from lumina_control.curve_editor import monotone_lut
+            pts = {
+                ch: [tuple(p) for p in rule.curve_points.get(
+                    ch, [(0.0, 0.0), (1.0, 1.0)])]
+                for ch in ("R", "G", "B")
+            }
+            r_lut = monotone_lut(pts["R"])
+            g_lut = monotone_lut(pts["G"])
+            b_lut = monotone_lut(pts["B"])
+            for c in self._get_cards():
+                if c.available and (not device or c.device_name == device):
+                    # Direct state set — avoid MonitorCard._on_curves_applied because
+                    # it triggers save_hook, which would persist the rule's transient
+                    # curves as the user's baseline in settings.json.
+                    c._ramp_fail_count = 0
+                    c._ramp_unsupported = False
+                    c._custom_luts = (r_lut, g_lut, b_lut)
+                    c._custom_curve_points = pts
+                    c._apply_ramp(user_triggered=True)
 
     def _restore(self) -> None:
         """Restore the snapshot saved before the last rule was applied."""
@@ -246,8 +275,17 @@ class RulesEngine:
             for c in self._get_cards():
                 if c.device_name == device and c.available:
                     c.apply_rule_rgb(*rgb)
+        for device, (luts, pts) in self._pre_curves.items():
+            for c in self._get_cards():
+                if c.device_name == device and c.available:
+                    c._ramp_fail_count = 0
+                    c._ramp_unsupported = False
+                    c._custom_luts = luts
+                    c._custom_curve_points = pts
+                    c._apply_ramp(user_triggered=True)
         self._pre_bri.clear()
         self._pre_con.clear()
         self._pre_gamma.clear()
         self._pre_rgb.clear()
+        self._pre_curves.clear()
         self._pre_device = None

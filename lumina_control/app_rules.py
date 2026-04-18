@@ -21,6 +21,9 @@ class AppRule:
     blue:         int | None = None   # DDC VCP 0x1A, 0-100, or None = don't touch
     enabled:      bool = True
     window_title: str | None = None   # regex matched on foreground window title; None = any
+    # Per-channel tone-curve control points: {"R": [[x,y],…], "G": […], "B": […]}
+    # None = don't touch; sent through MonitorCard._on_curves_applied when matched.
+    curve_points: dict | None = None
 
 
 # ── Built-in defaults ─────────────────────────────────────────────────────────
@@ -69,6 +72,14 @@ class AppRuleManager:
                 g   = d.get("green")
                 b   = d.get("blue")
                 wt = d.get("window_title")
+                cp = d.get("curve_points")
+                if isinstance(cp, dict):
+                    cp = {ch: [list(p) for p in pts]
+                          for ch, pts in cp.items() if ch in ("R", "G", "B")}
+                    if not cp:
+                        cp = None
+                else:
+                    cp = None
                 rules.append(AppRule(
                     process      = str(d.get("process", "")).lower(),
                     label        = str(d.get("label", d.get("process", ""))),
@@ -80,6 +91,7 @@ class AppRuleManager:
                     blue         = int(b) if b is not None else None,
                     enabled      = bool(d.get("enabled", True)),
                     window_title = str(wt) if wt else None,
+                    curve_points = cp,
                 ))
             return rules
         except Exception as e:

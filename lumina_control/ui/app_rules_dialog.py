@@ -65,6 +65,8 @@ class _RuleRow(QFrame):
             g = rule.green if rule.green is not None else "·"
             b = rule.blue  if rule.blue  is not None else "·"
             parts.append(_("RVB: {}/{}/{}").format(r, g, b))
+        if rule.curve_points:
+            parts.append(_("Courbes"))
 
         detail = QLabel("  ·  ".join(parts))
         detail.setObjectName("RuleRowDetail")
@@ -114,6 +116,13 @@ class _RuleFormDialog(QDialog):
 
         self._result: AppRule | None = None
         self._running_apps: list[tuple[str, str]] = []  # (exe, title)
+        # Curve control points edited via "Modifier les courbes…" sub-dialog.
+        # None = rule does not touch curves.
+        self._curve_points: dict | None = (
+            {ch: [tuple(p) for p in rule.curve_points.get(ch, [(0.0, 0.0), (1.0, 1.0)])]
+             for ch in ("R", "G", "B")}
+            if (rule and rule.curve_points) else None
+        )
 
         layout = QVBoxLayout(self)
         layout.setSpacing(12)
@@ -276,6 +285,39 @@ class _RuleFormDialog(QDialog):
 
         layout.addWidget(self._make_sep())
 
+        # ── Tone curves (GPU LUT) ─────────────────────────────────────────
+        lbl_crv_hdr = QLabel(_("Courbes tonales  —  LUT GPU"))
+        lbl_crv_hdr.setStyleSheet("font-size:12px; font-weight:600;")
+        layout.addWidget(lbl_crv_hdr)
+
+        lbl_crv_info = QLabel(_(
+            "Courbes RVB appliquées via GDI32 quand la règle est active  "
+            "(restaurées à la sortie de l'application)."
+        ))
+        lbl_crv_info.setWordWrap(True)
+        lbl_crv_info.setStyleSheet(f"font-size:10px; color:{TEXT_MUTED};")
+        layout.addWidget(lbl_crv_info)
+
+        crv_row = QHBoxLayout()
+        crv_row.setSpacing(8)
+        self._lbl_crv_state = QLabel()
+        self._lbl_crv_state.setStyleSheet(f"font-size:11px; color:{TEXT_MUTED};")
+        btn_edit_crv = QPushButton(_("Modifier les courbes…"))
+        btn_edit_crv.setProperty("class", "pill-muted")
+        btn_edit_crv.setCursor(Qt.PointingHandCursor)
+        btn_edit_crv.clicked.connect(self._edit_curves)
+        btn_clear_crv = QPushButton(_("Effacer"))
+        btn_clear_crv.setProperty("class", "pill-muted")
+        btn_clear_crv.setCursor(Qt.PointingHandCursor)
+        btn_clear_crv.clicked.connect(self._clear_curves)
+        crv_row.addWidget(self._lbl_crv_state, stretch=1)
+        crv_row.addWidget(btn_edit_crv)
+        crv_row.addWidget(btn_clear_crv)
+        layout.addLayout(crv_row)
+        self._update_curve_state_label()
+
+        layout.addWidget(self._make_sep())
+
         # ── Save / Cancel ─────────────────────────────────────────────────
         btn_row = QHBoxLayout()
         btn_row.addStretch()
@@ -427,6 +469,27 @@ class _RuleFormDialog(QDialog):
                     self._inp_label.setText(title.split(" - ")[0].strip()[:40])
                     break
 
+    # ── Tone curves ───────────────────────────────────────────────────────────
+
+    def _update_curve_state_label(self) -> None:
+        if self._curve_points is None:
+            self._lbl_crv_state.setText(_("Aucune courbe  ·  la règle ne touche pas au GPU LUT"))
+        else:
+            n = sum(len(self._curve_points.get(ch, [])) for ch in ("R", "G", "B"))
+            self._lbl_crv_state.setText(
+                _("Courbes définies  ·  {} points au total").format(n)
+            )
+
+    def _edit_curves(self) -> None:
+        dlg = _RuleCurvesDialog(self._curve_points, parent=self)
+        if dlg.exec() == QDialog.Accepted:
+            self._curve_points = dlg.result_points()
+            self._update_curve_state_label()
+
+    def _clear_curves(self) -> None:
+        self._curve_points = None
+        self._update_curve_state_label()
+
     # ── Save ──────────────────────────────────────────────────────────────────
 
     def _save(self) -> None:
@@ -443,16 +506,145 @@ class _RuleFormDialog(QDialog):
         green = None if skip_rgb else self._sl_g.value()
         blue  = None if skip_rgb else self._sl_b.value()
         wt = self._inp_title.text().strip() or None
+        curve_points = None
+        if self._curve_points is not None:
+            curve_points = {
+                ch: [list(p) for p in self._curve_points.get(
+                    ch, [(0.0, 0.0), (1.0, 1.0)])]
+                for ch in ("R", "G", "B")
+            }
         self._result = AppRule(
             process=proc, label=label,
             brightness=bri, contrast=con, gamma=gam,
             red=red, green=green, blue=blue,
             enabled=True,
             window_title=wt,
+            curve_points=curve_points,
         )
         self.accept()
 
     def result_rule(self) -> AppRule | None:
+        return self._result
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Tone-curve editor sub-dialog (used from the rule form)
+# ─────────────────────────────────────────────────────────────────────────────
+
+class _RuleCurvesDialog(QDialog):
+    """R/G/B tone curve editor embedded in a small dialog.
+
+    Reuses `_CurveWidget` from calibration.py. The result is the raw
+    `{ch: [(x,y), ...]}` dict or None if the user cleared the curves.
+    """
+
+    _PRESETS = {
+        "S-Curve": [(0.0, 0.0), (0.25, 0.18), (0.75, 0.82), (1.0, 1.0)],
+        "Film":    [(0.0, 0.0), (0.1, 0.12), (0.5, 0.52), (0.9, 0.88), (1.0, 1.0)],
+        "γ 2.2":   [(0.0, 0.0), (0.25, 0.53), (0.5, 0.73), (0.75, 0.88), (1.0, 1.0)],
+    }
+
+    def __init__(self, initial: dict | None, parent=None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle(_("Courbes tonales"))
+        self.setMinimumWidth(400)
+        self.setWindowFlags(Qt.Dialog | Qt.WindowCloseButtonHint)
+
+        from lumina_control.ui.calibration import _CurveWidget
+        self._result: dict | None = None
+
+        layout = QVBoxLayout(self)
+        layout.setSpacing(10)
+        layout.setContentsMargins(18, 14, 18, 14)
+
+        info = QLabel(_(
+            "Clic gauche pour ajouter/déplacer un point  ·  "
+            "clic droit pour supprimer."
+        ))
+        info.setWordWrap(True)
+        info.setStyleSheet(f"font-size:11px; color:{TEXT_MUTED};")
+        layout.addWidget(info)
+
+        ch_row = QHBoxLayout()
+        ch_row.setSpacing(6)
+        self._ch_btns: dict[str, QPushButton] = {}
+        for ch, name in (("R", _("Rouge")), ("G", _("Vert")), ("B", _("Bleu"))):
+            btn = QPushButton(name)
+            btn.setCheckable(True)
+            btn.setFixedHeight(26)
+            btn.setCursor(Qt.PointingHandCursor)
+            btn.clicked.connect(lambda _c, c=ch: self._set_channel(c))
+            ch_row.addWidget(btn)
+            self._ch_btns[ch] = btn
+        ch_row.addStretch()
+        layout.addLayout(ch_row)
+
+        preset_row = QHBoxLayout()
+        lbl_pre = QLabel(_("Présets :"))
+        lbl_pre.setStyleSheet(f"font-size:11px; color:{TEXT_MUTED};")
+        preset_row.addWidget(lbl_pre)
+        for name, pts in self._PRESETS.items():
+            b = QPushButton(name)
+            b.setProperty("class", "pill-muted")
+            b.setFixedHeight(24)
+            b.setCursor(Qt.PointingHandCursor)
+            b.clicked.connect(lambda _c, p=pts: self._apply_preset(p))
+            preset_row.addWidget(b)
+        preset_row.addStretch()
+        layout.addLayout(preset_row)
+
+        self._curve_widget = _CurveWidget()
+        if initial:
+            for ch in ("R", "G", "B"):
+                pts = initial.get(ch)
+                if pts:
+                    self._curve_widget._curves[ch] = [tuple(p) for p in pts]
+            self._curve_widget.update()
+        layout.addWidget(self._curve_widget, alignment=Qt.AlignCenter)
+
+        self._set_channel("R")
+
+        btn_row = QHBoxLayout()
+        btn_reset = QPushButton(_("Réinitialiser"))
+        btn_reset.setProperty("class", "pill-muted")
+        btn_reset.setCursor(Qt.PointingHandCursor)
+        btn_reset.clicked.connect(self._reset)
+        btn_row.addWidget(btn_reset)
+        btn_row.addStretch()
+        btn_cancel = QPushButton(_("Annuler"))
+        btn_cancel.setProperty("class", "pill-muted")
+        btn_cancel.setCursor(Qt.PointingHandCursor)
+        btn_cancel.clicked.connect(self.reject)
+        btn_ok = QPushButton(_("Valider"))
+        btn_ok.setProperty("class", "pill")
+        btn_ok.setCursor(Qt.PointingHandCursor)
+        btn_ok.clicked.connect(self._accept)
+        btn_row.addWidget(btn_cancel)
+        btn_row.addWidget(btn_ok)
+        layout.addLayout(btn_row)
+
+    def _set_channel(self, ch: str) -> None:
+        for c, b in self._ch_btns.items():
+            b.setChecked(c == ch)
+        self._curve_widget.set_channel(ch)
+
+    def _apply_preset(self, pts: list) -> None:
+        for ch in ("R", "G", "B"):
+            self._curve_widget._curves[ch] = list(pts)
+        self._curve_widget.update()
+
+    def _reset(self) -> None:
+        for ch in ("R", "G", "B"):
+            self._curve_widget.reset_channel(ch)
+
+    def _accept(self) -> None:
+        self._result = {
+            ch: [tuple(p) for p in self._curve_widget._curves[ch]]
+            for ch in ("R", "G", "B")
+        }
+        self.accept()
+
+    def result_points(self) -> dict | None:
         return self._result
 
 

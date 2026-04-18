@@ -134,6 +134,17 @@ def set_device_gamma_ramp(device_name: str,
         # Do NOT force ramp[255]=65535 — with warmth the blue endpoint is
         # intentionally lower, and a forced jump would cause API failures.
         ramp[0] = ramp[256] = ramp[512] = 0
+        # SetDeviceGammaRamp requires each ramp to be monotonically
+        # non-decreasing.  Fritsch-Carlson produces monotone output only if
+        # the control points themselves are monotone; custom user curves may
+        # not be.  Clamp each entry to max(prev, current) as a safety net.
+        for i in range(1, 256):
+            if ramp[i] < ramp[i - 1]:
+                ramp[i] = ramp[i - 1]
+            if ramp[256 + i] < ramp[256 + i - 1]:
+                ramp[256 + i] = ramp[256 + i - 1]
+            if ramp[512 + i] < ramp[512 + i - 1]:
+                ramp[512 + i] = ramp[512 + i - 1]
         ok = bool(ctypes.windll.gdi32.SetDeviceGammaRamp(hdc, ctypes.byref(ramp)))
         ctypes.windll.gdi32.DeleteDC(hdc)
         return ok

@@ -673,13 +673,15 @@ class MonitorCard(QFrame):
     def _apply_gamma(self) -> None:
         self._apply_ramp()
 
-    def _apply_ramp(self) -> None:
+    def _apply_ramp(self, user_triggered: bool = False) -> None:
         """Apply GDI32 ramp: custom curves composed with current gamma + warmth.
 
         Falls back to plain gamma when no custom curves are set, or when the
-        driver doesn't support arbitrary ramps.  _ramp_unsupported is set after
-        3 consecutive background failures but reset whenever the user explicitly
-        applies curves, so curves are retried after each intentional action.
+        driver doesn't support arbitrary ramps.  *user_triggered*=True means the
+        user just clicked Apply or a preset — on any failure we fall through to
+        plain gamma immediately so the user gets visible feedback.  Background
+        calls (gamma slider, rules engine, night mode) tolerate 2 transient
+        failures before falling back, to avoid flicker on brief driver hiccups.
         """
         if self._custom_luts is not None and not self._ramp_unsupported:
             from lumina_control.curve_editor import compose_ramp, set_device_gamma_ramp
@@ -690,17 +692,27 @@ class MonitorCard(QFrame):
             if set_device_gamma_ramp(self.device_name, r, g, b):
                 self._ramp_fail_count = 0
                 return
-            self._ramp_fail_count += 1
-            if self._ramp_fail_count >= 3:
+            if user_triggered:
                 log.warning(
-                    "SetDeviceGammaRamp non supporté sur %s — courbes sauvegardées "
-                    "mais non appliquées à l'affichage.",
+                    "SetDeviceGammaRamp a échoué sur %s — repli sur gamma simple "
+                    "(driver/moniteur ne supporte pas les rampes personnalisées).",
                     self.device_name,
                 )
                 self._ramp_unsupported = True
                 self._ramp_fail_count = 0
+                # fall through to set_device_gamma for immediate feedback
             else:
-                return  # Échec transitoire — préserver le ramp existant.
+                self._ramp_fail_count += 1
+                if self._ramp_fail_count >= 3:
+                    log.warning(
+                        "SetDeviceGammaRamp non supporté sur %s — courbes "
+                        "sauvegardées mais non appliquées à l'affichage.",
+                        self.device_name,
+                    )
+                    self._ramp_unsupported = True
+                    self._ramp_fail_count = 0
+                else:
+                    return  # Échec transitoire — préserver le ramp existant.
         set_device_gamma(self.device_name, self.gamma_value, self.current_warmth)
 
     def set_gamma_value(self, gamma: float) -> None:
@@ -807,7 +819,7 @@ class MonitorCard(QFrame):
             self._custom_luts = (r_lut, g_lut, b_lut)
             if curve_points is not None:
                 self._custom_curve_points = curve_points
-        self._apply_ramp()
+        self._apply_ramp(user_triggered=True)
         # Persist immediately so a crash doesn't lose the user's work.
         if self._save_hook is not None:
             QTimer.singleShot(300, self._save_hook)

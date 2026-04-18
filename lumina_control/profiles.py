@@ -82,10 +82,15 @@ class ProfileManager:
         return sorted((self._read(self._named_path) or {}).keys())
 
     def save_named_profile(self, name: str, monitors: list[dict],
-                           gamma_values: dict) -> None:
+                           gamma_values: dict,
+                           curve_points: dict | None = None) -> None:
         """Save/overwrite a named profile."""
         data = self._read(self._named_path) or {}
-        data[name] = {"monitors": monitors, "gamma_values": gamma_values}
+        data[name] = {
+            "monitors": monitors,
+            "gamma_values": gamma_values,
+            "curve_points": curve_points or {},
+        }
         self._write(self._named_path, data)
 
     def load_named_profile(self, name: str) -> dict | None:
