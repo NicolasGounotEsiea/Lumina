@@ -192,16 +192,18 @@ def get_foreground_window_monitor() -> str | None:
 
 _GWL_STYLE   = -16
 _WS_CAPTION  = 0x00C00000   # window has a title bar → regular app, not a game
-_WS_MAXIMIZE = 0x01000000   # maximized window → not exclusive/borderless fullscreen
 
 
 def is_fullscreen_foreground() -> bool:
     """Return True if the foreground window occupies its monitor entirely.
 
-    Filters out regular maximized apps (browser, explorer…) by checking that
-    the window has no title bar (WS_CAPTION) and is not simply maximized
-    (WS_MAXIMIZE).  True fullscreen and borderless-windowed games use WS_POPUP
-    without a caption, so they pass through correctly.
+    Filters out regular apps by checking that the window has no title bar
+    (WS_CAPTION).  WS_MAXIMIZE is intentionally NOT filtered: LWJGL/GLFW games
+    (Minecraft, etc.) use a borderless-maximized window (WS_POPUP|WS_MAXIMIZE)
+    that covers the full monitor rect — the rect comparison below catches that.
+    Regular maximized apps (browser, explorer) always have WS_CAPTION and are
+    already excluded before reaching the rect check.
+    A 1-pixel tolerance handles GLFW windows that are occasionally off by one.
     """
     try:
         hwnd = win32gui.GetForegroundWindow()
@@ -213,8 +215,6 @@ def is_fullscreen_foreground() -> bool:
         style = ctypes.windll.user32.GetWindowLongW(hwnd, _GWL_STYLE)
         if style & _WS_CAPTION:
             return False   # has a title bar → not a game
-        if style & _WS_MAXIMIZE:
-            return False   # maximized window → not exclusive/borderless fullscreen
         r = win32gui.GetWindowRect(hwnd)
         MONITOR_DEFAULTTONEAREST = 2
         hmon = ctypes.windll.user32.MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST)
@@ -226,7 +226,8 @@ def is_fullscreen_foreground() -> bool:
         if not ctypes.windll.user32.GetMonitorInfoW(hmon, ctypes.byref(mi)):
             return False
         m = mi.rcMonitor
-        return r == (m.left, m.top, m.right, m.bottom)
+        return (abs(r[0] - m.left)  <= 1 and abs(r[1] - m.top)    <= 1 and
+                abs(r[2] - m.right) <= 1 and abs(r[3] - m.bottom) <= 1)
     except Exception:
         return False
 

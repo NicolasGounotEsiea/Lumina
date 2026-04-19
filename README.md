@@ -22,7 +22,8 @@
 | **Courbes dans les profils nommés** | Les courbes R/G/B sont incluses dans les profils nommés (`named_profiles.json`) — sauvegardées et restaurées automatiquement. Rétro-compatible. |
 | **Courbes dans les profils auto** | Chaque règle d'application peut définir ses propres courbes tonales. Appliquées à l'entrée de la règle, restaurées à la sortie sans polluer les réglages permanents. |
 | **Noms d'écrans (EDID)** | Résolution en deux temps : `EnumDisplayDevices` puis fallback EDID registry (`HKLM\...\DISPLAY\<model>`) — couvre tous les moniteurs PnP même sans driver EDID. |
-| **Rétroéclairage WMI** | Backend WMI pour les dalles internes (laptops) sans DDC-CI. Connexion WMI mise en cache par worker (reset-on-error). |
+| **Rétroéclairage WMI** | Backend WMI pour les dalles internes (laptops) sans DDC-CI. Double fallback : package `wmi` → `win32com.client` + `ExecMethod_` (aucune dépendance optionnelle). Sonde DDC au démarrage pour détecter les dalles eDP qui exposent un handle I2C non fonctionnel. |
+| **Contraste & RGB GPU (laptops)** | Sur les écrans sans DDC-CI fonctionnel : contraste simulé via `SetDeviceGammaRamp` (stretch linéaire, 50 = neutre) ; gains R/G/B simulés dans le dialog Calibrage (mode GPU, 100 = neutre). Se compose avec gamma, chaleur et courbes tonales via `compose_ramp`. |
 | **Détection HDR** | `hdr.get_hdr_info()` via `DisplayConfig` API — remonte `hdr_supported` et `hdr_enabled` par écran (Windows Advanced Color). |
 | **Position des écrans** | `enumerate_monitors()` calcule automatiquement Gauche / Droite / Centre / Haut / Bas / Principal selon la disposition physique. |
 | **Hiérarchie visuelle** | Séparateurs de groupes étiquetés (RÉGLAGES / AUTOMATISATION / APPLICATION) dans le panneau principal. |
@@ -192,7 +193,7 @@ Voir les [issues ouvertes](https://github.com/NicolasGounotEsiea/Lumina/issues) 
 - [ ] B9 — Raccourcis globaux (hotkeys système)
 - [x] B10 — Vérification de mise à jour (GitHub Releases API)
 - [x] B11 — Mode Jeu ciblé par écran
-- [x] B12 — Backend WMI pour dalles internes (laptops sans DDC-CI)
+- [x] B12 — Backend WMI pour dalles internes (laptops sans DDC-CI) + contraste/RGB GPU simulés
 - [x] B13 — EDID registry fallback pour les noms d'écrans
 - [x] B14 — Détection HDR via DisplayConfig API
 
