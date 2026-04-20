@@ -14,6 +14,21 @@ from lumina_control.hdr import set_hdr, set_auto_hdr, set_sdr_white_level
 
 log = logging.getLogger(__name__)
 
+
+def _load_vcp_off_cache() -> dict:
+    """Load the per-monitor VCP power-off value cache from AppData."""
+    try:
+        import json, os as _os
+        from lumina_control.config import get_app_data_dir
+        path = _os.path.join(get_app_data_dir(), "vcp_off_cache.json")
+        if _os.path.exists(path):
+            with open(path) as f:
+                return json.load(f)
+    except Exception:
+        pass
+    return {}
+
+
 # DDC-CI VCP codes
 VCP_BRIGHTNESS   = 0x10
 VCP_CONTRAST     = 0x12
@@ -40,10 +55,13 @@ class _DDCWorker(QObject):
     rgb_read_done = Signal(object)    # tuple[int,int,int] | None
     write_failed  = Signal()          # emitted when a bri/con write is rejected by the monitor
 
-    def __init__(self, monitor_handle, monitor_index: int) -> None:
+    def __init__(self, monitor_handle, monitor_index: int,
+                 device_name: str = "", vcp_off_value: int | None = None) -> None:
         super().__init__()
-        self._monitor = monitor_handle
-        self._index   = monitor_index
+        self._monitor      = monitor_handle
+        self._index        = monitor_index
+        self._device_name  = device_name
+        self._vcp_off_value: int | None = vcp_off_value  # pre-loaded or probed lazily
 
     @Slot()
     def read_initial(self) -> None:
@@ -84,13 +102,151 @@ class _DDCWorker(QObject):
         except Exception as e:
             log.debug("DDC RGB write failed on monitor %d: %s", self._index, e)
 
-    @Slot(int)                     # VCP_POWER value (1=on, 5=standby)
+    @Slot(int)                     # state: 1=on, anything else=off
     def apply_power(self, state: int) -> None:
+        import time as _time
+        if state == 1:
+            log.info("POWER mon=%d  ON  vcp_off_value=%s", self._index, self._vcp_off_value)
+            # Unified wake: DPMS from this thread + 300 ms + VCP=1 retry.
+            # The 300 ms delay is required — test confirmed DPMS+0ms+VCP=1 fails
+            # while DPMS+300ms+VCP=1 succeeds on both monitor types.
+            from lumina_control.utils import wake_all_monitors as _wake
+            _wake()
+            log.info("POWER mon=%d  DPMS sent, sleeping 300ms", self._index)
+            _time.sleep(0.3)
+            for attempt in range(6):
+                try:
+                    with self._monitor:
+                        self._monitor.vcp.set_vcp_feature(VCP_POWER, 1)
+                    log.info("POWER mon=%d  VCP=1 OK (attempt %d)", self._index, attempt)
+                    return
+                except Exception as e:
+                    log.info("POWER mon=%d  VCP=1 attempt %d failed: %s",
+                             self._index, attempt, e)
+                    if attempt < 5:
+                        _time.sleep(0.5)
+            log.info("POWER mon=%d  all VCP=1 retries exhausted", self._index)
+        else:
+            log.info("POWER mon=%d  OFF  vcp_off_value=%s", self._index, self._vcp_off_value)
+            if self._vcp_off_value is None:
+                self._probe_vcp_off()
+            else:
+                self._send_power_off()
+
+    def _send_power_off(self) -> None:
+        import time as _time
+        if self._vcp_off_value == 5:
+            log.info("POWER mon=%d  OFF LG-type: VCP=4 → 600ms → GET → VCP=5", self._index)
+            try:
+                with self._monitor:
+                    self._monitor.vcp.set_vcp_feature(VCP_POWER, 4)
+                log.info("POWER mon=%d  VCP=4 sent", self._index)
+            except Exception as e:
+                log.info("POWER mon=%d  VCP=4 FAILED: %s", self._index, e)
+            _time.sleep(0.6)
+            try:
+                with self._monitor:
+                    val = self._monitor.vcp.get_vcp_feature(VCP_POWER)
+                log.info("POWER mon=%d  DDC GET after VCP=4: %s (DDC alive)", self._index, val)
+            except Exception as e:
+                log.info("POWER mon=%d  DDC GET after VCP=4 FAILED (DDC dead?): %s", self._index, e)
         try:
             with self._monitor:
-                self._monitor.vcp.set_vcp_feature(VCP_POWER, state)
+                self._monitor.vcp.set_vcp_feature(VCP_POWER, self._vcp_off_value)
+            log.info("POWER mon=%d  VCP=%d sent OK", self._index, self._vcp_off_value)
         except Exception as e:
-            log.debug("DDC power write failed on monitor %d: %s", self._index, e)
+            log.info("POWER mon=%d  VCP=%d FAILED: %s", self._index, self._vcp_off_value, e)
+
+    def _probe_vcp_off(self) -> None:
+        """Discover the right VCP power-off value for this specific monitor.
+
+        VCP=4 (standby): safe — DPMS can revive the DDC bus if it dies.
+        VCP=5 (hard off): permanently kills DDC on some monitors (e.g. 27GL650F),
+        but leaves DDC alive on others (e.g. LG UltraWide) while actually going dark.
+
+        Strategy: send VCP=4, wait 600 ms, probe DDC liveness.
+        - DDC dead  → 27GL-type: VCP=4 is correct, DPMS revives bus for wake.
+        - DDC alive → LG-type: monitor did not go dark, must follow with VCP=5.
+        """
+        import time as _time
+        try:
+            with self._monitor:
+                self._monitor.vcp.set_vcp_feature(VCP_POWER, 4)
+        except Exception as e:
+            log.debug("DDC power probe (VCP=4) failed on monitor %d: %s", self._index, e)
+            self._vcp_off_value = 4
+            return
+
+        # Wait 1500 ms: LG UltraWide transiently kills its DDC bus for ~700 ms
+        # after VCP=4 before reviving it.  600 ms was too short → LG was
+        # misclassified as 27GL-type (DDC dead) and cached as vcp_off=4,
+        # which causes a 10 s panel restart.  1500 ms reliably catches the revival.
+        _time.sleep(1.5)
+
+        ddc_alive = False
+        try:
+            with self._monitor:
+                self._monitor.vcp.get_vcp_feature(VCP_POWER)
+            ddc_alive = True
+        except Exception:
+            pass
+
+        if ddc_alive:
+            # LG-type: DDC survived VCP=4 → monitor may still be lit. Try VCP=5.
+            # Safety check: verify DDC survives VCP=5 before committing to it.
+            # Some monitors self-revive DDC after VCP=4 but die permanently on VCP=5.
+            log.debug("Monitor %d: DDC alive after VCP=4, trying VCP=5", self._index)
+            try:
+                with self._monitor:
+                    self._monitor.vcp.set_vcp_feature(VCP_POWER, 5)
+            except Exception as e:
+                log.debug("Monitor %d: VCP=5 send failed: %s → falling back to VCP=4", self._index, e)
+                self._vcp_off_value = 4
+                self._persist_vcp_off_value()
+                return
+            _time.sleep(0.3)
+            ddc_after_5 = False
+            try:
+                with self._monitor:
+                    self._monitor.vcp.get_vcp_feature(VCP_POWER)
+                ddc_after_5 = True
+            except Exception:
+                pass
+            if ddc_after_5:
+                self._vcp_off_value = 5
+                log.debug("Monitor %d: LG-type confirmed (DDC alive after VCP=5)", self._index)
+            else:
+                # VCP=5 killed DDC — this monitor is like 27GL with VCP=5.
+                # Fall back to VCP=4 for future offs.  Current session: monitor is
+                # off with dead DDC; DPMS will revive it on wake (same as 27GL+VCP=4).
+                self._vcp_off_value = 4
+                log.debug("Monitor %d: VCP=5 killed DDC → downgraded to VCP=4", self._index)
+        else:
+            # 27GL-type: DDC died from VCP=4 — DPMS will revive it on wake.
+            self._vcp_off_value = 4
+            log.debug("Monitor %d: 27GL-type (DDC-dead after VCP=4) → VCP=4 confirmed", self._index)
+
+        self._persist_vcp_off_value()
+
+    def _persist_vcp_off_value(self) -> None:
+        if not self._device_name or self._vcp_off_value is None:
+            return
+        try:
+            import json, os as _os
+            # Use APPDATA env var — avoids Qt QStandardPaths (not safe on worker thread)
+            appdata = _os.environ.get("APPDATA", "")
+            if not appdata:
+                return
+            path = _os.path.join(appdata, "LuminaControl", "vcp_off_cache.json")
+            cache: dict = {}
+            if _os.path.exists(path):
+                with open(path) as f:
+                    cache = json.load(f)
+            cache[self._device_name] = self._vcp_off_value
+            with open(path, "w") as f:
+                json.dump(cache, f)
+        except Exception:
+            pass
 
     @Slot()
     def read_rgb(self) -> None:
@@ -317,7 +473,9 @@ class MonitorCard(QFrame):
 
     def _start_worker(self) -> None:
         self._thread = QThread()          # no parent — managed manually
-        self._worker = _DDCWorker(self.monitor, self.index)
+        self._worker = _DDCWorker(self.monitor, self.index,
+                                  device_name=self.device_name,
+                                  vcp_off_value=_load_vcp_off_cache().get(self.device_name))
         self._worker.moveToThread(self._thread)
 
         # Dispatch signals → worker slots (queued, run on worker thread)
@@ -866,10 +1024,14 @@ class MonitorCard(QFrame):
         self.style().unpolish(self.btn_pow)
         self.style().polish(self.btn_pow)
         if not on:
-            self._sig_power.emit(5)
+            self._sig_power.emit(0)
         else:
             wake_all_monitors()
-            QTimer.singleShot(200, lambda: self._sig_power.emit(1))
+            self._sig_power.emit(1)
+            # Panel takes several seconds to physically light up after VCP=1.
+            # Block the button so the user doesn't click again thinking it failed.
+            self.btn_pow.setEnabled(False)
+            QTimer.singleShot(7000, lambda: self.btn_pow.setEnabled(True))
 
     def toggle_power(self) -> None:
         self.set_power(not self.power_on)

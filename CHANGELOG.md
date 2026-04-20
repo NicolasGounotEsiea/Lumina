@@ -5,6 +5,23 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/).
 
 ---
 
+## [1.2.9] — 2026-04-20
+
+### Corrigé
+- **Rallumage écran fiable via DDC-CI** : refonte complète du système de mise sous/hors tension des moniteurs.
+  - **Classification probe-based** : au premier appui sur le bouton OFF, l'application sonde le moniteur — VCP=4 + attente 1 500 ms + test DDC — pour détecter le type exact :
+    - *Type LG UltraWide* : DDC transiante morte ~700 ms après VCP=4 puis relancée → classification VCP=5 (hard-off).
+    - *Type 27GL650F / générique* : DDC morte après VCP=4 → classification VCP=4.
+  - **Séquence OFF pour LG-type** : VCP=4 → 600 ms → lecture DDC (flush I2C) → VCP=5, exactement comme la sonde. Évite l'état I2C corrompu qui empêchait le rallumage.
+  - **Séquence ON** : DPMS (`SC_MONITORPOWER -1`) → 300 ms → VCP=1, avec jusqu'à 6 tentatives toutes les 500 ms. Le signal DPMS réveille le GPU avant que DDC-CI soit disponible.
+  - **Sécurité VCP=5** : si VCP=5 tue définitivement le DDC du moniteur, l'application rétrograde automatiquement en VCP=4 (jamais de VCP=5 sur un moniteur non compatible).
+  - **Cache persistant** (`vcp_off_cache.json` dans `%APPDATA%\LuminaControl\`) : la classification est mémorisée par `device_name` — la sonde ne tourne qu'une fois par moniteur.
+  - **Bouton désactivé 7 s** après un ON pour prévenir le double-clic pendant le délai de démarrage matériel (~10 s sur LG UltraWide en hard-off).
+- **`SetDeviceGammaRamp` retiré du chemin de réveil** : l'appel GPU LUT effectué entre DPMS et VCP=1 interférait avec la propagation du signal DPMS. Supprimé de `set_power(True)`.
+- **Écriture cache thread-safe** : `_persist_vcp_off_value` utilisait `QStandardPaths` (Qt, interdit hors thread principal) → remplacé par `os.environ["APPDATA"]`.
+
+---
+
 ## [1.2.8] — 2026-04-19
 
 ### Ajouté

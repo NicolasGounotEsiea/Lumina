@@ -17,7 +17,23 @@ log = logging.getLogger(__name__)
 
 
 def wake_all_monitors() -> None:
-    """Simulate a tiny mouse movement to wake sleeping monitors."""
+    """Wake sleeping/standby monitors via OS DPMS signal + mouse movement.
+
+    SC_MONITORPOWER -1 goes through the GPU driver and works even when
+    DDC-CI is unavailable (monitor in explicit DDC standby, I2C bus off).
+    Mouse movement is kept as a fallback for Windows idle-sleep monitors.
+    """
+    try:
+        _HWND_BROADCAST   = 0xFFFF
+        _WM_SYSCOMMAND    = 0x0112
+        _SC_MONITORPOWER  = 0xF170
+        _SMTO_ABORTIFHUNG = 0x0002
+        ctypes.windll.user32.SendMessageTimeoutW(
+            _HWND_BROADCAST, _WM_SYSCOMMAND, _SC_MONITORPOWER, -1,
+            _SMTO_ABORTIFHUNG, 500, None,
+        )
+    except Exception:
+        pass
     win32api.mouse_event(win32con.MOUSEEVENTF_MOVE, 1, 1, 0, 0)
     win32api.mouse_event(win32con.MOUSEEVENTF_MOVE, -1, -1, 0, 0)
 
