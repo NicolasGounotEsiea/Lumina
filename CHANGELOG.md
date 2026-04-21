@@ -5,6 +5,23 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/).
 
 ---
 
+## [1.3.0] — 2026-04-21
+
+### Corrigé
+- **Gains RGB sauvegardés et restaurés dans les profils nommés** : les gains R/G/B font maintenant partie intégrante de chaque profil nommé.
+  - Moniteurs DDC : un cache `_last_ddc_rgb` est maintenu sur chaque `MonitorCard` et mis à jour à chaque écriture RGB (CalibrationDialog ou profil auto). Ce cache est inclus dans `named_profiles.json` à la sauvegarde et réappliqué via DDC-CI au chargement.
+  - Moniteurs software (dalles laptop) : les gains `sw_r/g/b_gain` sont sérialisés sous les clés `sw_r/sw_g/sw_b` dans le profil et restaurés via `_on_sw_rgb_applied`.
+  - Le cache DDC est également persisté dans `settings.json` (`ddc_rgb_gains`) et restauré au démarrage, avant le premier scan des écrans.
+  - Profils mixtes (profil créé sur DDC, rechargé sur SW ou vice-versa) : la conversion échoue proprement sans erreur.
+- **Profils automatiques (App Rules) : moniteurs restaurés quand les règles sont modifiées en direct** : `update_rules()` appelait `_active_rule = None` sans restaurer les valeurs d'avant la règle. Corrigé — `suspend()` est maintenant appelé en premier, ce qui restaure bri/con/gamma/RGB avant de vider l'état.
+- **App Rules : snapshot RGB incorrect sur dalles sans DDC-CI** : `_snapshot()` tentait un `read_rgb()` DDC sur les moniteurs software (qui retournait `None`), laissant `_pre_rgb` vide et rendant la restauration impossible. Corrigé — les dalles SW snapshottent leurs gains logiciels courants (`sw_r/g/b_gain × 100`).
+- **`apply_rgb_dict` ne déverrouillait pas le mode couleur utilisateur** : les écritures R/G/B via profil nommé ou règle auto échouaient silencieusement sur les moniteurs dont l'OSD est en mode couleur préréglé (Gaming/Cinema). Corrigé — VCP `0x14 = 0x0B` (User Colour) envoyé avant chaque séquence d'écriture RGB, cohérent avec `apply_rgb`.
+- **`apply_rule_rgb` ignoré sur dalles sans DDC-CI** : la méthode émettait un signal DDC même pour les moniteurs software, sans effet. Corrigé — les moniteurs SW passent par `_on_sw_rgb_applied` avec conversion d'échelle (0–100 → 0.0–1.0).
+- **Accès DDC-CI concurrent entre le worker et CalibrationDialog** : ouvrir le dialog de calibrage pendant que `_DDCWorker` tournait pouvait causer des collisions I2C. Le worker est maintenant suspendu (`set_ddc_suspended(True)`) pendant toute la durée du dialog et repris à la fermeture.
+- **Écritures DDC-CI et GPU LUT ignorées quand le moniteur est éteint** : `_apply_changes` et `_apply_ramp` retournaient immédiatement si `power_on` est `False`, évitant de réveiller involontairement le moniteur lors d'un glissement de slider ou d'un changement de gamma.
+
+---
+
 ## [1.2.9] — 2026-04-20
 
 ### Corrigé
