@@ -2390,15 +2390,9 @@ class MainWindow(QWidget):
                 c.set_rgb_values(rgb)
 
     def _sync_rgb_from_master(self, master: MonitorCard) -> None:
-        try:
-            with master.monitor:
-                rgb = {
-                    0x16: master.monitor.vcp.get_vcp_feature(0x16)[0],
-                    0x18: master.monitor.vcp.get_vcp_feature(0x18)[0],
-                    0x1A: master.monitor.vcp.get_vcp_feature(0x1A)[0],
-                }
-        except Exception as e:
-            log.debug("RGB read from master failed: %s", e)
+        # Use the last-known cache to avoid blocking the main thread with DDC reads
+        rgb = master._last_ddc_rgb
+        if not rgb:
             return
         for c in self.cards:
             if c.device_name != master.device_name and c.available:

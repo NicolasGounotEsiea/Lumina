@@ -407,6 +407,11 @@ class CalibrationDialog(QDialog):
         self._labels:   dict[int, QLabel]  = {}
         self._loaded:   dict[int, int]     = {}
         self._ch_btns:  dict[str, QPushButton] = {}
+        self._pending_ddc: dict[int, int]  = {}
+        self._ddc_timer = QTimer(self)
+        self._ddc_timer.setSingleShot(True)
+        self._ddc_timer.setInterval(150)
+        self._ddc_timer.timeout.connect(self._flush_ddc)
 
         self.setWindowTitle(_("Calibrage : {}").format(monitor_name))
         self.setFixedSize(374, 510)
@@ -772,24 +777,39 @@ class CalibrationDialog(QDialog):
 
     def _on_channel_change(self, code: int, value: int) -> None:
         self._labels[code].setText(str(value))
-        if self._sw_rgb_callback is not None and self.monitor is None:
-            # Software RGB path — call back with 0.0-1.0 gains
-            _code_order = [c for _l, c, _o in self._CHANNELS]
-            gains = [self._sliders[c].value() / 100.0 for c in _code_order]
-            self._sw_rgb_callback(*gains)
-        else:
-            try:
-                with self.monitor:
-                    self.monitor.vcp.set_vcp_feature(code, value)
-            except Exception as e:
-                log.debug("Cannot set VCP 0x%02X: %s", code, e)
-            self._emit_rgb_sync()
         if self.sync_rgb and not self._syncing:
             self._syncing = True
             for c, sl in self._sliders.items():
                 if c != code:
                     sl.setValue(value)
             self._syncing = False
+        if self._sw_rgb_callback is not None and self.monitor is None:
+            # Software RGB path — debounce via timer, callback with 0.0-1.0 gains
+            self._pending_ddc[code] = value
+            self._ddc_timer.start()
+        else:
+            # DDC path — queue write, flush after 150 ms of inactivity
+            self._pending_ddc[code] = value
+            self._ddc_timer.start()
+
+    def _flush_ddc(self) -> None:
+        """Write all pending DDC or SW RGB values in one batch."""
+        if not self._pending_ddc:
+            return
+        pending = dict(self._pending_ddc)
+        self._pending_ddc.clear()
+        if self._sw_rgb_callback is not None and self.monitor is None:
+            _code_order = [c for _l, c, _o in self._CHANNELS]
+            gains = [self._sliders[c].value() / 100.0 for c in _code_order]
+            self._sw_rgb_callback(*gains)
+        else:
+            try:
+                with self.monitor:
+                    for code, value in pending.items():
+                        self.monitor.vcp.set_vcp_feature(code, value)
+            except Exception as e:
+                log.debug("Cannot set VCP RGB: %s", e)
+            self._emit_rgb_sync()
 
     def _emit_rgb_sync(self) -> None:
         if not self.sync_rgb_callback:
@@ -828,6 +848,12 @@ class CalibrationWizard(QDialog):
         self._build_ui()
         self._refresh_screens()
         self._update_ui()
+
+    def closeEvent(self, event) -> None:
+        if self.pattern_window is not None:
+            self.pattern_window.close()
+            self.pattern_window = None
+        super().closeEvent(event)
 
     def _build_ui(self) -> None:
         layout = QVBoxLayout(self)
