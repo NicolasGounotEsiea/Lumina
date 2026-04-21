@@ -422,6 +422,7 @@ class MonitorCard(QFrame):
         self.power_on      = True
         self.gamma_value   = 1.0
         self.current_warmth: float = 0.0
+        self._last_ddc_rgb: dict | None = None  # cache for named-profile save
 
         # Debounce timer — fires after 150 ms of slider inactivity
         self._timer = QTimer(singleShot=True, interval=150)
@@ -879,6 +880,8 @@ class MonitorCard(QFrame):
             self._timer.start()
 
     def _apply_changes(self) -> None:
+        if not self.power_on:
+            return  # Monitor is off — don't send DDC writes that would wake it
         if self._ddc_suspended:
             return  # Keep pending values; will flush on resume
         bri = self._pending_bri
@@ -917,6 +920,8 @@ class MonitorCard(QFrame):
         user gets visible feedback.  Background calls tolerate 2 transient
         failures before falling back, to avoid flicker on brief driver hiccups.
         """
+        if not self.power_on:
+            return  # Monitor is off — skip GPU ramp to avoid waking it
         has_sw_effect = (
             self._use_sw_controls and (
                 self.sw_contrast != 0.5
@@ -1009,10 +1014,18 @@ class MonitorCard(QFrame):
         return result[0]
 
     def apply_rule_rgb(self, red: int | None, green: int | None, blue: int | None) -> None:
-        """Apply R/G/B gain values via DDC-CI (async)."""
-        if not self.monitor or (red is None and green is None and blue is None):
+        """Apply R/G/B gain values via DDC-CI (async) or SW gains for non-DDC monitors."""
+        if red is None and green is None and blue is None:
             return
-        self._sig_rgb.emit(red, green, blue)
+        if self._use_sw_controls:
+            # Convert 0-100 DDC scale to 0.0-1.0 SW gain; None keeps current gain
+            self._on_sw_rgb_applied(
+                (red  / 100.0) if red  is not None else self.sw_r_gain,
+                (green / 100.0) if green is not None else self.sw_g_gain,
+                (blue / 100.0) if blue is not None else self.sw_b_gain,
+            )
+        elif self.monitor:
+            self._sig_rgb.emit(red, green, blue)
 
     # ── Power (dispatched to worker thread) ───────────────────────────────────
 
@@ -1039,6 +1052,7 @@ class MonitorCard(QFrame):
     # ── RGB sync (from CalibrationDialog callback, async) ────────────────────
 
     def set_rgb_values(self, rgb: dict) -> None:
+        self._last_ddc_rgb = rgb
         self._sig_rgb_dict.emit(rgb)
 
     # ── Calibration dialog ────────────────────────────────────────────────────
@@ -1103,7 +1117,17 @@ class MonitorCard(QFrame):
             initial_sw_rgb=initial_sw,
             parent=self.window(),
         )
+        # Suspend the DDC worker while CalibrationDialog has direct I2C access
+        # to avoid concurrent use of the same DDC handle from two threads.
+        was_suspended = self._ddc_suspended
+        if not self._use_sw_controls:
+            self.set_ddc_suspended(True)
         dlg.exec()
+        if not self._use_sw_controls:
+            self.set_ddc_suspended(was_suspended)
+        # Cache DDC RGB gains so named profiles can save them
+        if not self._use_sw_controls and dlg._sliders:
+            self._last_ddc_rgb = {code: sl.value() for code, sl in dlg._sliders.items()}
 
     # ── Active highlight ──────────────────────────────────────────────────────
 

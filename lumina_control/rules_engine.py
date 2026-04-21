@@ -117,8 +117,8 @@ class RulesEngine:
         """Replace the rule list (e.g. after the user edits them).
         Forces re-evaluation on the next poll tick.
         """
+        self.suspend()          # restore monitors if a rule was active
         self._rules = rules
-        self._active_rule = None
         self._candidate_key = None
         self._ticks = 0
 
@@ -202,9 +202,16 @@ class RulesEngine:
             self._pre_gamma = {c.device_name: c.gamma_value for c in target}
         if rule.red is not None or rule.green is not None or rule.blue is not None:
             for c in target:
-                rgb = c.read_rgb()
-                if rgb is not None:
-                    self._pre_rgb[c.device_name] = rgb
+                if c._use_sw_controls:
+                    self._pre_rgb[c.device_name] = (
+                        int(round(c.sw_r_gain * 100)),
+                        int(round(c.sw_g_gain * 100)),
+                        int(round(c.sw_b_gain * 100)),
+                    )
+                else:
+                    rgb = c.read_rgb()
+                    if rgb is not None:
+                        self._pre_rgb[c.device_name] = rgb
         if rule.curve_points:
             for c in target:
                 self._pre_curves[c.device_name] = (

@@ -324,6 +324,7 @@ class MainWindow(QWidget):
         self.gamma_value           = s["gamma_value"]
         self.gamma_values:  dict   = s["gamma_values"]
         self.curve_points:  dict   = s["curve_points"]
+        self.ddc_rgb_gains: dict   = s.get("ddc_rgb_gains", {})
         self.focus_enabled         = s["focus_enabled"]
         self.focus_dim             = s["focus_dim"]
         self.night_mode_enabled    = s["night_mode_enabled"]
@@ -1198,10 +1199,16 @@ class MainWindow(QWidget):
         name = self._profile_name_edit.text().strip()
         if not name:
             return
+        def _card_rgb(c) -> dict:
+            if c._use_sw_controls:
+                return {"sw_r": c.sw_r_gain, "sw_g": c.sw_g_gain, "sw_b": c.sw_b_gain}
+            return c._last_ddc_rgb or {}
+
         monitors = [
             {"device_name": c.device_name,
              "brightness":  c.sl_bri.value(),
-             "contrast":    c.sl_con.value()}
+             "contrast":    c.sl_con.value(),
+             "rgb_gains":   _card_rgb(c)}
             for c in self.cards
         ]
         gamma_values = {c.device_name: c.gamma_value for c in self.cards}
@@ -1225,6 +1232,7 @@ class MainWindow(QWidget):
             dev = entry.get("device_name")
             bri = entry.get("brightness")
             con = entry.get("contrast")
+            rgb = entry.get("rgb_gains", {})
             for c in self.cards:
                 if c.device_name == dev:
                     self._sync_guard = True
@@ -1233,6 +1241,15 @@ class MainWindow(QWidget):
                     if con is not None:
                         c.sl_con.setValue(con)
                     self._sync_guard = False
+                    if rgb:
+                        if c._use_sw_controls:
+                            c._on_sw_rgb_applied(
+                                float(rgb.get("sw_r", 1.0)),
+                                float(rgb.get("sw_g", 1.0)),
+                                float(rgb.get("sw_b", 1.0)),
+                            )
+                        elif rgb:
+                            c.set_rgb_values({int(k): int(v) for k, v in rgb.items()})
         for dev, gamma in data.get("gamma_values", {}).items():
             for c in self.cards:
                 if c.device_name == dev:
@@ -1715,6 +1732,11 @@ class MainWindow(QWidget):
             "circadian_city":           self._circadian_city,
             "circadian_warmth_enabled": self._circadian.warmth_enabled,
             "circadian_warmth_max":     self._circadian.warmth_max,
+            "ddc_rgb_gains":            {
+                c.device_name: c._last_ddc_rgb
+                for c in self.cards
+                if c._last_ddc_rgb is not None and not c._use_sw_controls
+            },
         })
         self._rule_mgr.save(self._rules_engine.rules)
         log.debug("Settings saved.")
@@ -1745,6 +1767,12 @@ class MainWindow(QWidget):
         except Exception as e:
             log.warning("Monitor scan failed: %s", e)
             self.mon_l.addWidget(QLabel(_("Erreur lors du scan des écrans")))
+
+        # Restore DDC RGB gain cache so named-profile saves don't lose gains
+        for c in self.cards:
+            saved = self.ddc_rgb_gains.get(c.device_name)
+            if saved and not c._use_sw_controls:
+                c._last_ddc_rgb = {int(k): int(v) for k, v in saved.items()}
 
         # Apply saved per-monitor gamma values (with night warmth if active)
         warmth = (self.night_warmth / 100.0) if self.night_mode_enabled else 0.0
