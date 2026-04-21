@@ -1249,7 +1249,10 @@ class MainWindow(QWidget):
                                 float(rgb.get("sw_b", 1.0)),
                             )
                         elif rgb:
-                            c.set_rgb_values({int(k): int(v) for k, v in rgb.items()})
+                            try:
+                                c.set_rgb_values({int(k): int(v) for k, v in rgb.items()})
+                            except (ValueError, TypeError):
+                                pass  # profile saved with SW keys, monitor now DDC
         for dev, gamma in data.get("gamma_values", {}).items():
             for c in self.cards:
                 if c.device_name == dev:

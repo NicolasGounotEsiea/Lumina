@@ -266,6 +266,7 @@ class _DDCWorker(QObject):
     def apply_rgb_dict(self, rgb: dict) -> None:
         try:
             with self._monitor:
+                self._monitor.vcp.set_vcp_feature(VCP_COLOR_PRESET, 0x0B)
                 for code, val in rgb.items():
                     if val is not None:
                         self._monitor.vcp.set_vcp_feature(code, int(val))
