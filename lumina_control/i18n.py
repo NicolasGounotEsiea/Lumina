@@ -596,7 +596,7 @@ _EN: dict[str, str] = {
 
 def _detect_lang() -> str:
     try:
-        loc = _locale.getdefaultlocale()[0] or ""
+        loc = _locale.getlocale()[0] or ""
         return "fr" if loc.lower().startswith("fr") else "en"
     except Exception:
         return "fr"
