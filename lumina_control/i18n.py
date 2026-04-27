@@ -87,6 +87,12 @@ _EN: dict[str, str] = {
     "Bas":                              "Bottom",
     "Principal":                        "Primary",
 
+    # ── monitor_card — HDR notice ────────────────────────────────────────────────
+    "⚠  HDR actif — DDC-CI indisponible.\n"
+    "Réglez la luminosité du contenu SDR via le slider ci-dessous.":
+        "⚠  HDR active — DDC-CI unavailable.\n"
+        "Adjust the SDR content brightness using the slider below.",
+
     # ── monitor_card — write warning ─────────────────────────────────────────
     "⚠  Réglages sans effet — le moniteur refuse les commandes DDC-CI.\n"
     "Cause probable : un preset image (Game / FPS / Cinema) est actif dans l'OSD.\n"

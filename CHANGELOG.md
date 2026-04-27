@@ -5,6 +5,15 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/).
 
 ---
 
+## [1.3.1] — 2026-04-25
+
+### Corrigé
+- **Contrôles DDC-CI/gamma masqués quand HDR est actif** : quand le HDR Windows est activé sur un moniteur, les sliders luminosité, contraste et gamma GDI32 n'ont aucun effet (le pipeline HDR les contourne). Ils sont désormais masqués et remplacés par un message explicatif. Seul le slider SDR White Level reste visible, c'est le seul contrôle fonctionnel en mode HDR. Le masquage réagit en temps réel au poll timer (500 ms) — activer/désactiver le HDR depuis Windows met instantanément la carte à jour.
+- **Slider Chaleur grisé quand Mode Nuit inactif** : le slider restait visuellement actif (couleur orange) même quand `setEnabled(False)` était appliqué, car les règles CSS `QSlider#SliderWarmth` (sélecteur ID) écrasaient les règles `:disabled` génériques par spécificité QSS. Corrigé en appliquant le style directement sur le widget via `setStyleSheet()` au moment du toggle, ce qui contourne le problème de spécificité.
+- **`DeprecationWarning` Python 3.11 dans `i18n.py`** : `locale.getdefaultlocale()` remplacé par `locale.getlocale()`.
+
+---
+
 ## [1.3.0] — 2026-04-21
 
 ### Corrigé

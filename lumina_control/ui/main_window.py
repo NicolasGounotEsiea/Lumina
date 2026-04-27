@@ -1386,7 +1386,7 @@ class MainWindow(QWidget):
         self.sl_warmth.setObjectName("SliderWarmth")
         self.sl_warmth.setRange(0, 100)
         self.sl_warmth.setValue(self.night_warmth)
-        self.sl_warmth.setEnabled(self.night_mode_enabled)
+        self._set_warmth_slider_enabled(self.night_mode_enabled)
         self.lbl_warmth_val = QLabel(f"{self.night_warmth}%")
         self.lbl_warmth_val.setObjectName("ValueBadge")
         self.lbl_warmth_val.setFixedWidth(40)
@@ -2433,9 +2433,19 @@ class MainWindow(QWidget):
 
     # ── Night mode ────────────────────────────────────────────────────────────
 
+    def _set_warmth_slider_enabled(self, enabled: bool) -> None:
+        self.sl_warmth.setEnabled(enabled)
+        if enabled:
+            self.sl_warmth.setStyleSheet("")
+        else:
+            self.sl_warmth.setStyleSheet(
+                "QSlider::sub-page:horizontal { background: rgba(96,205,255,0.20); }"
+                "QSlider::handle:horizontal   { border-color: #484848; background: #363636; }"
+            )
+
     def _set_night_mode(self, enabled: bool) -> None:
         self.night_mode_enabled = enabled
-        self.sl_warmth.setEnabled(enabled)
+        self._set_warmth_slider_enabled(enabled)
         warmth = (self.night_warmth / 100.0) if enabled else 0.0
         for c in self.cards:
             c.set_warmth(warmth)

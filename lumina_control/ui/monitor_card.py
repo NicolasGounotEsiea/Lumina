@@ -580,8 +580,8 @@ class MonitorCard(QFrame):
         self.lbl_details.setObjectName("MonitorDetails")
         body_l.addWidget(self.lbl_details)
 
-        self._add_slider_row(body_l, _("☀  Lum."), self._on_brightness_change, "bri")
-        self._add_slider_row(body_l, _("◑  Con."), self._on_contrast_change,   "con")
+        self._bri_row_w = self._add_slider_row(body_l, _("☀  Lum."), self._on_brightness_change, "bri")
+        self._con_row_w = self._add_slider_row(body_l, _("◑  Con."), self._on_contrast_change,   "con")
 
         # Write-blocked warning — shown when the monitor rejects DDC-CI writes
         self._lbl_write_warn = QLabel(_(
@@ -595,7 +595,9 @@ class MonitorCard(QFrame):
         body_l.addWidget(self._lbl_write_warn)
 
         # Gamma slider (GPU-based, independent of DDC-CI)
-        row_g = QHBoxLayout()
+        self._gamma_row_w = QWidget()
+        row_g = QHBoxLayout(self._gamma_row_w)
+        row_g.setContentsMargins(0, 0, 0, 0)
         row_g.setSpacing(8)
         lbl_g = QLabel(_("γ  Gamma"))
         lbl_g.setObjectName("Subtle")
@@ -620,7 +622,17 @@ class MonitorCard(QFrame):
         row_g.addWidget(lbl_g)
         row_g.addWidget(self.sl_gamma)
         row_g.addWidget(self.lbl_gamma)
-        body_l.addLayout(row_g)
+        body_l.addWidget(self._gamma_row_w)
+
+        # HDR active notice — shown instead of DDC/gamma controls when HDR is on
+        self._hdr_notice = QLabel(_(
+            "⚠  HDR actif — DDC-CI indisponible.\n"
+            "Réglez la luminosité du contenu SDR via le slider ci-dessous."
+        ))
+        self._hdr_notice.setObjectName("WriteWarnLabel")
+        self._hdr_notice.setWordWrap(True)
+        self._hdr_notice.setVisible(False)
+        body_l.addWidget(self._hdr_notice)
 
         layout.addWidget(self._body)
 
@@ -733,6 +745,13 @@ class MonitorCard(QFrame):
         self._btn_hdr.setText(_("Activé") if info.hdr_enabled else _("Désactivé"))
         self._btn_hdr.blockSignals(False)
 
+        # Hide DDC/gamma controls when HDR is active — they have no effect
+        self._bri_row_w.setVisible(not info.hdr_enabled)
+        self._con_row_w.setVisible(not info.hdr_enabled)
+        self._gamma_row_w.setVisible(not info.hdr_enabled)
+        self._lbl_write_warn.setVisible(self._lbl_write_warn.isVisible() and not info.hdr_enabled)
+        self._hdr_notice.setVisible(info.hdr_enabled)
+
         # SDR white level slider
         self._sdr_row.setVisible(info.hdr_enabled)
         if info.hdr_enabled:
@@ -788,8 +807,10 @@ class MonitorCard(QFrame):
 
         return frame
 
-    def _add_slider_row(self, layout, label: str, slot, name: str) -> None:
-        row = QHBoxLayout()
+    def _add_slider_row(self, layout, label: str, slot, name: str) -> QWidget:
+        wrapper = QWidget()
+        row = QHBoxLayout(wrapper)
+        row.setContentsMargins(0, 0, 0, 0)
         row.setSpacing(8)
         lbl = QLabel(label)
         lbl.setObjectName("Subtle")
@@ -804,9 +825,10 @@ class MonitorCard(QFrame):
         row.addWidget(lbl)
         row.addWidget(sl)
         row.addWidget(val)
-        layout.addLayout(row)
+        layout.addWidget(wrapper)
         setattr(self, f"sl_{name}", sl)
         setattr(self, f"lbl_{name}", val)
+        return wrapper
 
     # ── DDC-CI read (result lands back on main thread via signal) ─────────────
 
