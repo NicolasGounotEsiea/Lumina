@@ -432,3 +432,128 @@ class TestIccStructureRegression:
         data = build_icc_bytes(lut, lut, lut)
         for sig in (b"rTRC", b"gTRC", b"bTRC"):
             assert sig in data, f"Tag {sig!r} missing from ICC profile"
+
+
+class TestV131LGTypeOnRetryTiming:
+    """BUG: LG UltraWide (VCP=5 hard-off) needed two clicks to turn on.
+    FIX: LG-type (vcp_off=5) gets 2 s initial wait + 12 retries × 1 s instead of
+    300 ms + 6 × 500 ms.  The longer window lets the DDC bus revive after DPMS.
+    27GL-type (vcp_off=4) keeps the fast path (300 ms + 6 retries).
+    NOTE: _reaffirm_standby() was removed — it caused self-wake via I2C bus probe.
+    """
+
+    def test_lg_type_uses_longer_initial_wait(self):
+        """apply_power(1) with vcp_off=5 must use initial_wait >= 2.0 s."""
+        pytest.importorskip("PySide6.QtCore")
+        import time, unittest.mock as mock
+
+        from lumina_control.ui.monitor_card import _DDCWorker
+
+        worker = _DDCWorker.__new__(_DDCWorker)
+        import threading
+        worker._off_intent = threading.Event()
+        worker._vcp_off_value = 5
+        worker._index = 0
+
+        vcp_calls = []
+        mock_monitor = type("M", (), {
+            "__enter__": lambda s, *a: s,
+            "__exit__":  lambda s, *a: None,
+            "vcp": type("V", (), {
+                "set_vcp_feature": staticmethod(lambda c, v: vcp_calls.append(v))
+            })(),
+        })()
+        worker._monitor = mock_monitor
+
+        sleep_calls = []
+
+        def _fake_sleep(t):
+            sleep_calls.append(t)
+
+        with mock.patch("time.sleep", side_effect=_fake_sleep), \
+             mock.patch("lumina_control.utils.wake_all_monitors"):
+            worker.apply_power(1)
+
+        # First sleep call is the initial_wait — must be >= 2.0 s for LG-type
+        assert sleep_calls, "apply_power(1) must sleep at least once"
+        assert sleep_calls[0] >= 2.0, (
+            f"LG-type initial_wait={sleep_calls[0]:.1f} s — too short, "
+            "DDC bus won't revive in time (need >= 2.0 s)"
+        )
+
+    def test_27gl_type_uses_shorter_initial_wait(self):
+        """apply_power(1) with vcp_off=4 must use initial_wait <= 0.5 s (fast path)."""
+        pytest.importorskip("PySide6.QtCore")
+        import time, unittest.mock as mock
+
+        from lumina_control.ui.monitor_card import _DDCWorker
+
+        worker = _DDCWorker.__new__(_DDCWorker)
+        import threading
+        worker._off_intent = threading.Event()
+        worker._vcp_off_value = 4
+        worker._index = 0
+
+        mock_monitor = type("M", (), {
+            "__enter__": lambda s, *a: s,
+            "__exit__":  lambda s, *a: None,
+            "vcp": type("V", (), {
+                "set_vcp_feature": staticmethod(lambda c, v: None)
+            })(),
+        })()
+        worker._monitor = mock_monitor
+
+        sleep_calls = []
+
+        def _fake_sleep(t):
+            sleep_calls.append(t)
+
+        with mock.patch("time.sleep", side_effect=_fake_sleep), \
+             mock.patch("lumina_control.utils.wake_all_monitors"):
+            worker.apply_power(1)
+
+        assert sleep_calls, "apply_power(1) must sleep at least once"
+        assert sleep_calls[0] <= 0.5, (
+            f"27GL-type initial_wait={sleep_calls[0]:.1f} s — unexpectedly long"
+        )
+
+    def test_lg_type_has_more_retries_than_27gl(self):
+        """LG-type must attempt more VCP=1 retries than 27GL-type."""
+        pytest.importorskip("PySide6.QtCore")
+        import time, unittest.mock as mock
+        from lumina_control.ui.monitor_card import _DDCWorker
+
+        def _count_retries(vcp_off):
+            worker = _DDCWorker.__new__(_DDCWorker)
+            import threading
+            worker._off_intent = threading.Event()
+            worker._vcp_off_value = vcp_off
+            worker._index = 0
+            attempts = []
+            exc = Exception("DDC fail")
+            mock_monitor = type("M", (), {
+                "__enter__": lambda s, *a: s,
+                "__exit__":  lambda s, *a: None,
+                "vcp": type("V", (), {
+                    "set_vcp_feature": staticmethod(
+                        lambda c, v: (_ for _ in ()).throw(exc)
+                    )
+                })(),
+            })()
+            worker._monitor = mock_monitor
+            # Count how many times set_vcp_feature is called (= retry count)
+            call_count = [0]
+            def _raise(c, v):
+                call_count[0] += 1
+                raise exc
+            mock_monitor.vcp.set_vcp_feature = _raise
+            with mock.patch("time.sleep"), \
+                 mock.patch("lumina_control.utils.wake_all_monitors"):
+                worker.apply_power(1)
+            return call_count[0]
+
+        retries_lg   = _count_retries(5)
+        retries_27gl = _count_retries(4)
+        assert retries_lg > retries_27gl, (
+            f"LG-type retries ({retries_lg}) must exceed 27GL-type retries ({retries_27gl})"
+        )

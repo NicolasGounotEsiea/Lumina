@@ -7,7 +7,7 @@ from PySide6.QtWidgets import (
 )
 
 from lumina_control.i18n import _
-from lumina_control.utils import set_device_gamma, wake_all_monitors
+from lumina_control.utils import set_device_gamma
 from lumina_control.monitor_enumerate import MonitorDescriptor
 from lumina_control.ui.calibration import CalibrationDialog
 from lumina_control.hdr import set_hdr, set_auto_hdr, set_sdr_white_level
@@ -107,14 +107,21 @@ class _DDCWorker(QObject):
         import time as _time
         if state == 1:
             log.info("POWER mon=%d  ON  vcp_off_value=%s", self._index, self._vcp_off_value)
-            # Unified wake: DPMS from this thread + 300 ms + VCP=1 retry.
-            # The 300 ms delay is required — test confirmed DPMS+0ms+VCP=1 fails
-            # while DPMS+300ms+VCP=1 succeeds on both monitor types.
             from lumina_control.utils import wake_all_monitors as _wake
             _wake()
-            log.info("POWER mon=%d  DPMS sent, sleeping 300ms", self._index)
-            _time.sleep(0.3)
-            for attempt in range(6):
+            # LG-type (VCP=5 hard-off) needs more time for DDC bus to revive after
+            # DPMS wake.  27GL-type (VCP=4 standby) revives much faster.
+            if self._vcp_off_value == 5:
+                initial_wait  = 2.0
+                max_retries   = 12
+                retry_sleep   = 1.0
+            else:
+                initial_wait  = 0.3
+                max_retries   = 6
+                retry_sleep   = 0.5
+            log.info("POWER mon=%d  DPMS sent, sleeping %.1fs", self._index, initial_wait)
+            _time.sleep(initial_wait)
+            for attempt in range(max_retries):
                 try:
                     with self._monitor:
                         self._monitor.vcp.set_vcp_feature(VCP_POWER, 1)
@@ -123,8 +130,8 @@ class _DDCWorker(QObject):
                 except Exception as e:
                     log.info("POWER mon=%d  VCP=1 attempt %d failed: %s",
                              self._index, attempt, e)
-                    if attempt < 5:
-                        _time.sleep(0.5)
+                    if attempt < max_retries - 1:
+                        _time.sleep(retry_sleep)
             log.info("POWER mon=%d  all VCP=1 retries exhausted", self._index)
         else:
             log.info("POWER mon=%d  OFF  vcp_off_value=%s", self._index, self._vcp_off_value)
@@ -1062,7 +1069,8 @@ class MonitorCard(QFrame):
         if not on:
             self._sig_power.emit(0)
         else:
-            wake_all_monitors()
+            # wake_all_monitors() is called by the worker (apply_power slot) —
+            # no need to duplicate it here from the main thread.
             self._sig_power.emit(1)
             # Panel takes several seconds to physically light up after VCP=1.
             # Block the button so the user doesn't click again thinking it failed.
